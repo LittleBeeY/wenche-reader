@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 深度阅读</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div>
+            <h1>深度阅读</h1>
+            <p>Document Reader</p>
+          </div>
+        </div>
+
+        <label class="upload-zone" for="file-input">
+          <input id="file-input" type="file" accept=".txt,.md,.markdown,.html,.htm,.pdf,.docx,.epub" multiple />
+          <span class="upload-icon" aria-hidden="true">+</span>
+          <span class="upload-title">批量上传文章</span>
+          <span class="upload-types">TXT MD HTML PDF DOCX EPUB</span>
+        </label>
+
+        <div class="import-options">
+          <label>
+            <span>分类</span>
+            <input id="category-input" type="text" list="category-options" maxlength="80" placeholder="例如：第一章" />
+          </label>
+          <label>
+            <span>排序</span>
+            <select id="document-sort">
+              <option value="filename">文件名</option>
+              <option value="title">文章标题</option>
+              <option value="import">导入顺序</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="document-meta">
+          <span class="meta-label">当前文档</span>
+          <strong id="document-title">未选择</strong>
+        </div>
+
+        <nav class="document-list" aria-label="文档列表">
+          <div class="document-list-toolbar">
+            <span class="meta-label">文档列表</span>
+            <div class="document-list-actions">
+              <button id="select-visible" type="button" disabled>全选结果</button>
+              <button id="delete-selected" type="button" disabled>删除所选</button>
+            </div>
+          </div>
+          <input id="document-search" class="document-search" type="search" placeholder="搜索文档、文件名或分类" aria-label="搜索文档" />
+          <div class="archive-create-controls">
+            <input id="new-archive-name" type="text" maxlength="80" placeholder="新归档名称" aria-label="新归档名称" />
+            <button id="create-archive" type="button" disabled>新建</button>
+          </div>
+          <div id="archive-list" class="archive-list" aria-label="归档位置"></div>
+          <div class="batch-archive-controls">
+            <select id="archive-category" aria-label="选择归档">
+              <option value="">选择归档</option>
+              <option value="未分类">未分类</option>
+            </select>
+            <datalist id="category-options"></datalist>
+            <button id="archive-selected" type="button" disabled>放入归档</button>
+          </div>
+          <div class="archive-manage-actions">
+            <button id="rename-archive" type="button" disabled>重命名</button>
+            <button id="delete-archive" type="button" disabled>删除归档</button>
+          </div>
+          <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
+          <div id="document-list"></div>
+        </nav>
+      </aside>
+
+      <section class="reader-shell">
+        <div class="reader-toolbar">
+          <div>
+            <span class="section-label">Reader</span>
+            <h2 id="reader-title">上传一篇文章开始阅读</h2>
+          </div>
+          <div class="reader-search" role="search">
+            <input id="reader-search-input" type="search" placeholder="搜索当前文章" aria-label="搜索当前文章" />
+            <button id="previous-match" type="button" title="上一个匹配" aria-label="上一个匹配" disabled>↑</button>
+            <span id="match-indicator">0 / 0</span>
+            <button id="next-match" type="button" title="下一个匹配" aria-label="下一个匹配" disabled>↓</button>
+          </div>
+          <div class="page-controls" aria-label="分页">
+            <button id="prev-page" type="button">上一页</button>
+            <span id="page-indicator">0 / 0</span>
+            <button id="next-page" type="button">下一页</button>
+          </div>
+          <div id="status" class="status" role="status"></div>
+        </div>
+
+        <article id="reader" class="reader" aria-live="polite"></article>
+        <div id="selection-menu" class="selection-menu" hidden>
+          <button data-action="direct" type="button">解析</button>
+          <button data-action="deep" type="button">深入解析</button>
+          <button data-action="custom" type="button">自定义问题</button>
+        </div>
+      </section>
+
+      <aside class="ai-panel">
+        <div class="ai-header">
+          <span class="section-label">AI</span>
+          <h2>解析面板</h2>
+        </div>
+
+        <div id="ai-status" class="ai-status">正在检查 AI 接口</div>
+
+        <div class="quick-actions" aria-label="快速解析">
+          <button id="explain-page" type="button">解析当前页</button>
+          <button id="deep-page" type="button">深入解析当前页</button>
+        </div>
+
+        <div class="question-box">
+          <textarea id="question-input" rows="4" placeholder="输入问题"></textarea>
+          <div class="question-actions">
+            <button id="ask-button" type="button">提问</button>
+            <button id="cancel-ai" type="button" hidden>取消解析</button>
+          </div>
+        </div>
+
+        <div class="answer-toolbar">
+          <span>解析记录</span>
+          <button id="history-toggle" type="button" hidden>查看全部</button>
+        </div>
+        <div id="answer-list" class="answer-list"></div>
+      </aside>
+    </main>
+
+    <script src="/vendor/marked.min.js"></script>
+    <script src="/vendor/purify.min.js"></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
