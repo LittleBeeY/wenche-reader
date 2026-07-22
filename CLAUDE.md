@@ -9,6 +9,7 @@ npm.cmd install
 npm.cmd start
 npm.cmd run dev
 npm.cmd test
+npm.cmd run test:e2e
 npm.cmd run open
 npm.cmd run config:ai
 ```
@@ -22,19 +23,23 @@ npm.cmd run config:ai
 - `src/lib/documentParser.js`：所有文档解析、HTML/CSS 清洗。
 - `src/lib/storage.js`：SQLite schema、迁移和事务。
 - `src/lib/aiProvider.js`：AI provider adapter 和提示词。
+- `src/lib/markdownExport.js`：阅读标注和 AI 回答沉淀的 Markdown 导出。
 - `src/lib/selectionContext.js`：选区及全文上下文裁剪。
 - `test/`：Node test runner 测试，服务 API 使用临时数据目录。
+- `e2e/`：Playwright 跨浏览器流程，使用隔离临时数据目录和 Mock provider。
 
 ## 必须保持的约束
 
 - 不要提交 `.env`、`data/`、`uploads/`、日志或 `node_modules/`。
 - 新文件格式必须通过 `documentParser.js` 接入，并补解析与安全测试；不要在路由或前端另写解析器。
+- DOCX 的 AI 文本继续由 Mammoth 和 `documentParser.js` 生成；视觉页面由 `public/docxPreview.js` 调用 docx-preview 渲染。原文件读取必须验证路径仍位于 `uploads/`。
 - 任何写入 `innerHTML` 的模型或文档内容都必须先清洗。AI Markdown 继续使用 `marked` + DOMPurify。
 - 删除原文件前必须验证解析后的路径仍位于 `uploads/`。
 - SQLite schema 变化必须兼容现有数据库，并补迁移测试。
+- 备份必须排除 `.env` 和 API Key；恢复数据库提交成功后不得再删除新恢复文件。
 - AI 业务代码只依赖 provider adapter；不要把 DeepSeek 或其他厂商逻辑散落到路由和前端。
 - 直接解析、深入解析和自定义问题必须保持不同提示词结构，并以原文依据为核心。
-- 侧栏开合状态保存在浏览器本地；划词 AI 操作必须自动展开右侧面板。
+- 侧栏开合和阅读排版设置保存在浏览器本地；划词 AI 操作必须自动展开右侧面板。
 - 只做单机可信环境假设。加入公网能力前必须先设计认证、用户隔离和隐私授权。
 
 ## 环境变量

@@ -21,11 +21,24 @@ import {
   dismissSelectionUi
 } from "./selectionUi.js";
 import { loadPanelState, savePanelState } from "./panelState.js";
+import {
+  createDocxPreview,
+  isDocxDocument,
+  measureDocxPages,
+  paginateRenderedDocxSections
+} from "./docxPreview.js";
+import {
+  DEFAULT_READING_SETTINGS,
+  loadReadingSettings,
+  normalizeReadingSettings,
+  saveReadingSettings
+} from "./readingSettings.js";
 
 const state = {
   document: null,
   documents: [],
   pages: [],
+  docxPreview: null,
   archives: [],
   archiveFilter: "",
   pageIndex: 0,
@@ -37,9 +50,15 @@ const state = {
   searchMatches: [],
   searchMatchIndex: -1,
   showAllHistory: false,
+  knowledgeItems: [],
+  aiView: "analysis",
+  pendingAnnotation: null,
+  activeAnnotationId: null,
+  docxScrollFrame: null,
   aiController: null,
   busy: false,
-  panels: loadPanelState(window.localStorage)
+  panels: loadPanelState(window.localStorage),
+  readingSettings: loadReadingSettings(window.localStorage)
 };
 
 const appShell = document.querySelector("#app-shell");
@@ -81,6 +100,26 @@ const nextMatchButton = document.querySelector("#next-match");
 const matchIndicator = document.querySelector("#match-indicator");
 const cancelAiButton = document.querySelector("#cancel-ai");
 const historyToggleButton = document.querySelector("#history-toggle");
+const bookmarkPageButton = document.querySelector("#bookmark-page");
+const analysisTab = document.querySelector("#analysis-tab");
+const knowledgeTab = document.querySelector("#knowledge-tab");
+const analysisView = document.querySelector("#analysis-view");
+const knowledgeView = document.querySelector("#knowledge-view");
+const annotationList = document.querySelector("#annotation-list");
+const knowledgeList = document.querySelector("#knowledge-list");
+const exportCurrentButton = document.querySelector("#export-current");
+const exportAllButton = document.querySelector("#export-all");
+const downloadBackupButton = document.querySelector("#download-backup");
+const restoreBackupInput = document.querySelector("#restore-backup");
+const annotationDialog = document.querySelector("#annotation-dialog");
+const annotationExcerpt = document.querySelector("#annotation-excerpt");
+const annotationNote = document.querySelector("#annotation-note");
+const cancelAnnotationButton = document.querySelector("#cancel-annotation");
+const readingSettingsPanel = document.querySelector("#reading-settings");
+const decreaseFontButton = document.querySelector("#decrease-font");
+const increaseFontButton = document.querySelector("#increase-font");
+const fontScaleOutput = document.querySelector("#font-scale");
+const resetReadingSettingsButton = document.querySelector("#reset-reading-settings");
 
 documentSidebarToggle.addEventListener("click", () => {
   state.panels.leftCollapsed = !state.panels.leftCollapsed;
@@ -103,6 +142,18 @@ reader.addEventListener("mouseup", () => {
   setTimeout(captureSelection, 0);
 });
 
+reader.addEventListener("click", (event) => {
+  const mark = event.target?.closest?.("[data-annotation-id]");
+  if (mark && reader.contains(mark)) showAnnotationMenu(mark);
+});
+
+reader.addEventListener("scroll", syncDocxPageFromScroll);
+
+window.addEventListener("resize", () => {
+  applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
+  applyDocxReadingScale();
+});
+
 document.addEventListener("mousedown", (event) => {
   if (!selectionMenu.contains(event.target)) {
     dismissSelectionUi({
@@ -110,6 +161,8 @@ document.addEventListener("mousedown", (event) => {
       browserSelection: window.getSelection(),
       state
     });
+    state.activeAnnotationId = null;
+    selectionMenu.dataset.mode = "selection";
   }
 });
 
@@ -117,6 +170,22 @@ selectionMenu.addEventListener("click", async (event) => {
   const action = event.target?.dataset?.action;
   if (!action) return;
   selectionMenu.hidden = true;
+
+  if (action === "remove-annotation") {
+    const annotationId = state.activeAnnotationId;
+    state.activeAnnotationId = null;
+    if (annotationId) await deleteAnnotation(annotationId);
+    return;
+  }
+
+  if (action === "highlight") {
+    await createAnnotation("highlight");
+    return;
+  }
+  if (action === "note") {
+    openAnnotationDialog();
+    return;
+  }
   expandAiPanel();
 
   if (action === "custom") {
@@ -212,6 +281,116 @@ historyToggleButton.addEventListener("click", () => {
   renderHistory(state.document?.aiRecords || []);
 });
 
+bookmarkPageButton.addEventListener("click", async () => {
+  await togglePageBookmark();
+});
+
+analysisTab.addEventListener("click", () => showAiView("analysis"));
+knowledgeTab.addEventListener("click", async () => {
+  showAiView("knowledge");
+  await loadKnowledgeItems();
+});
+
+answerList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-save-record]");
+  if (!button) return;
+  const record = state.document?.aiRecords?.find(
+    (item) => Number(item.id) === Number(button.dataset.saveRecord)
+  );
+  if (!record) return;
+  if (record.saved) {
+    showAiView("knowledge");
+    await loadKnowledgeItems();
+    return;
+  }
+  await saveAiRecord(record, {
+    saved: true,
+    title: defaultKnowledgeTitle(record),
+    note: ""
+  });
+});
+
+knowledgeList.addEventListener("click", async (event) => {
+  const actionButton = event.target.closest("button[data-knowledge-action]");
+  if (!actionButton) return;
+  const item = state.knowledgeItems.find(
+    (record) => Number(record.id) === Number(actionButton.dataset.recordId)
+  );
+  if (!item) return;
+  const card = actionButton.closest(".knowledge-item");
+  if (actionButton.dataset.knowledgeAction === "remove") {
+    await saveAiRecord(item, { saved: false, title: "", note: "" });
+    return;
+  }
+  await saveAiRecord(item, {
+    saved: true,
+    title: card.querySelector("[data-knowledge-title]").value.trim(),
+    note: card.querySelector("[data-knowledge-note]").value.trim()
+  });
+});
+
+annotationList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-annotation-action]");
+  if (!button) return;
+  const annotation = state.document?.annotations?.find(
+    (item) => Number(item.id) === Number(button.dataset.annotationId)
+  );
+  if (!annotation) return;
+  if (button.dataset.annotationAction === "jump") {
+    showPage(annotation.pageIndex);
+    return;
+  }
+  if (button.dataset.annotationAction === "delete") {
+    await deleteAnnotation(annotation.id);
+    return;
+  }
+  const card = button.closest(".knowledge-item");
+  await updateAnnotation(annotation.id, card.querySelector("textarea").value.trim());
+});
+
+exportCurrentButton.addEventListener("click", () => {
+  if (state.document) downloadFrom(`/api/export/markdown?documentId=${state.document.id}`);
+});
+exportAllButton.addEventListener("click", () => downloadFrom("/api/export/markdown"));
+downloadBackupButton.addEventListener("click", () => downloadFrom("/api/backup"));
+restoreBackupInput.addEventListener("change", async () => {
+  const file = restoreBackupInput.files?.[0];
+  if (file) await restoreBackup(file);
+  restoreBackupInput.value = "";
+});
+
+annotationDialog.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!annotationNote.value.trim()) return;
+  annotationDialog.close();
+  await createAnnotation("note", annotationNote.value.trim(), state.pendingAnnotation);
+  state.pendingAnnotation = null;
+});
+cancelAnnotationButton.addEventListener("click", () => {
+  state.pendingAnnotation = null;
+  annotationDialog.close();
+});
+
+decreaseFontButton.addEventListener("click", () => {
+  updateReadingSettings({ fontScale: state.readingSettings.fontScale - 10 });
+});
+
+increaseFontButton.addEventListener("click", () => {
+  updateReadingSettings({ fontScale: state.readingSettings.fontScale + 10 });
+});
+
+readingSettingsPanel.addEventListener("click", (event) => {
+  const option = event.target.closest("[data-reading-control] button[data-value]");
+  if (!option) return;
+  const control = option.closest("[data-reading-control]").dataset.readingControl;
+  updateReadingSettings({ [control]: option.dataset.value });
+});
+
+resetReadingSettingsButton.addEventListener("click", () => {
+  state.readingSettings = { ...DEFAULT_READING_SETTINGS };
+  applyReadingSettings();
+});
+
 prevPageButton.addEventListener("click", async () => {
   if (state.pageIndex > 0) {
     showPage(state.pageIndex - 1);
@@ -243,6 +422,8 @@ nextPageButton.addEventListener("click", async () => {
 });
 
 renderPanelState();
+applyReadingSettings();
+showAiView("analysis");
 await loadAiStatus();
 await loadDocumentList();
 const lastDocumentId = getLastDocumentId(window.localStorage);
@@ -272,6 +453,109 @@ function renderPanelState() {
     expandIcon: "‹"
   });
   savePanelState(window.localStorage, state.panels);
+  requestAnimationFrame(() => {
+    applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
+    applyDocxReadingScale();
+  });
+}
+
+function updateReadingSettings(changes) {
+  state.readingSettings = normalizeReadingSettings({
+    ...state.readingSettings,
+    ...changes
+  });
+  applyReadingSettings();
+}
+
+function applyReadingSettings() {
+  const { fontScale, contentWidth, lineHeight } = state.readingSettings;
+  const widthMap = { narrow: "680px", standard: "820px", wide: "1080px" };
+  const lineHeightMap = { compact: 1.55, comfortable: 1.9, relaxed: 2.15 };
+
+  reader.style.setProperty("--reader-font-scale", String(fontScale / 100));
+  reader.style.setProperty("--reader-content-width", widthMap[contentWidth]);
+  reader.style.setProperty("--reader-line-height", String(lineHeightMap[lineHeight]));
+  applyDocxReadingScale();
+  applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
+
+  fontScaleOutput.textContent = `${fontScale}%`;
+  decreaseFontButton.disabled = fontScale <= 80;
+  increaseFontButton.disabled = fontScale >= 160;
+  for (const control of readingSettingsPanel.querySelectorAll("[data-reading-control]")) {
+    const currentValue = state.readingSettings[control.dataset.readingControl];
+    for (const button of control.querySelectorAll("button[data-value]")) {
+      const active = button.dataset.value === currentValue;
+      button.dataset.active = String(active);
+      button.setAttribute("aria-pressed", String(active));
+      button.disabled = Boolean(state.docxPreview);
+    }
+  }
+  saveReadingSettings(window.localStorage, state.readingSettings);
+}
+
+function applyDocxReadingScale() {
+  const host = reader.querySelector(".docx-preview-host");
+  const page =
+    host?.querySelector("section.docx:not([hidden])") ||
+    host?.querySelector("section.docx");
+  if (!host || !page) return;
+  const readerStyle = getComputedStyle(reader);
+  const availableWidth = Math.max(
+    1,
+    reader.clientWidth -
+      Number.parseFloat(readerStyle.paddingLeft) -
+      Number.parseFloat(readerStyle.paddingRight)
+  );
+  const pageWidth = page.offsetWidth || page.getBoundingClientRect().width;
+  if (!pageWidth) return;
+  const fitScale = Math.min(1, availableWidth / pageWidth);
+  host.style.setProperty(
+    "--docx-preview-zoom",
+    String(fitScale * (state.readingSettings.fontScale / 100))
+  );
+}
+
+function applyReadingSettingsToFrame(frame) {
+  const frameDocument = frame?.contentDocument;
+  if (!frameDocument?.head || !frameDocument.body) return;
+  const { fontScale, contentWidth, lineHeight } = state.readingSettings;
+  const widthMap = { narrow: 900, standard: 1200, wide: 1440 };
+  const lineHeightMap = { compact: 1.55, comfortable: 1.9, relaxed: 2.15 };
+  let style = frameDocument.querySelector("#wenche-reading-settings");
+  if (!style) {
+    style = frameDocument.createElement("style");
+    style.id = "wenche-reading-settings";
+    frameDocument.head.append(style);
+  }
+  style.textContent = `
+    html { overflow-x: hidden !important; }
+    body {
+      box-sizing: border-box !important;
+      line-height: ${lineHeightMap[lineHeight]} !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      max-width: none !important;
+      width: auto !important;
+      zoom: 1;
+    }
+    img { height: auto; max-width: 100%; }
+  `;
+
+  const availableWidth = Math.max(320, frame.clientWidth - 16);
+  const sourceWidth = Math.max(
+    availableWidth,
+    frameDocument.body.scrollWidth,
+    frameDocument.documentElement.scrollWidth
+  );
+  const targetWidth = Math.min(availableWidth, widthMap[contentWidth]);
+  const fitScale = Math.min(1, targetWidth / sourceWidth);
+  const zoom = fitScale * (fontScale / 100);
+  style.textContent += `
+    body {
+      width: ${Math.round(targetWidth / zoom)}px !important;
+      zoom: ${zoom};
+    }
+  `;
 }
 
 function expandAiPanel() {
@@ -370,14 +654,39 @@ async function loadDocument(id, targetPage = "saved") {
     const response = await fetch(`/api/documents/${id}`);
     const payload = await readJson(response);
     state.document = payload;
-    state.pages = payload.renderHtml
+    state.docxPreview = null;
+    let loadWarning = "";
+    const semanticPages = payload.renderHtml
       ? [{
           number: 1,
           blocks: payload.blocks,
           blockIds: payload.blocks.map((block) => block.id)
         }]
       : paginateBlocks(payload.blocks, { charsPerPage: 2800 });
+    state.pages = semanticPages;
+    if (isDocxDocument(payload)) {
+      setBusy(true, "正在还原 Word 排版");
+      try {
+        state.docxPreview = await createDocxPreview({
+          documentId: payload.id,
+          renderAsync: window.docx?.renderAsync
+        });
+        reader.classList.remove("has-rich-document");
+        reader.classList.add("has-docx-preview");
+        reader.replaceChildren(state.docxPreview.host);
+        for (const section of state.docxPreview.sections) section.hidden = false;
+        state.docxPreview.sections = paginateRenderedDocxSections(
+          state.docxPreview.host,
+          state.docxPreview.sections
+        );
+        state.docxPreview.pages = measureDocxPages(state.docxPreview.sections);
+        state.pages = state.docxPreview.pages;
+      } catch (error) {
+        loadWarning = `${error.message}，已切换到阅读版`;
+      }
+    }
     state.selection = { text: "", blockIds: [] };
+    state.activeAnnotationId = null;
     state.readerQuery = "";
     state.searchMatches = [];
     state.searchMatchIndex = -1;
@@ -390,9 +699,12 @@ async function loadDocument(id, targetPage = "saved") {
       : targetPage === "saved"
         ? getSavedPageIndex(window.localStorage, payload.id)
         : 0;
+    applyReadingSettings();
     showPage(targetPageIndex);
     renderHistory(payload.aiRecords || []);
-    setStatus("");
+    renderAnnotations();
+    exportCurrentButton.disabled = false;
+    setStatus(loadWarning, Boolean(loadWarning));
   } catch (error) {
     setStatus(error.message, true);
   } finally {
@@ -411,6 +723,7 @@ async function runAi(mode, question = "") {
   }
 
   const controller = new AbortController();
+  showAiView("analysis");
   state.aiController = controller;
   cancelAiButton.hidden = false;
   setBusy(true, "AI 正在解析");
@@ -518,6 +831,7 @@ async function refreshDocumentHistory() {
   const payload = await readJson(response);
   state.document = payload;
   renderHistory(payload.aiRecords);
+  renderAnnotations();
 }
 
 function renderDocumentList() {
@@ -931,16 +1245,20 @@ function updateSelectionActions() {
 function clearDocumentView() {
   state.document = null;
   state.pages = [];
+  state.docxPreview = null;
   state.pageIndex = 0;
   state.selection = { text: "", blockIds: [] };
   state.readerQuery = "";
   state.searchMatches = [];
   state.searchMatchIndex = -1;
   readerSearchInput.value = "";
+  applyReadingSettings();
   readerTitle.textContent = "上传一篇文章开始阅读";
   documentTitle.textContent = "未选择";
   reader.replaceChildren();
   renderHistory([]);
+  renderAnnotations();
+  exportCurrentButton.disabled = true;
   renderDocumentList();
   updatePaginationControls();
   updateSearchControls();
@@ -952,11 +1270,20 @@ function renderDocumentHeader(documentData) {
   renderDocumentList();
 }
 
-function showPage(pageIndex) {
+function showPage(pageIndex, { preserveScroll = false } = {}) {
   if (state.pages.length === 0) return;
+  const previousScrollTop = reader.scrollTop;
   state.pageIndex = Math.min(Math.max(pageIndex, 0), state.pages.length - 1);
   state.selection = { text: "", blockIds: [] };
+  state.activeAnnotationId = null;
   selectionMenu.hidden = true;
+
+  if (state.docxPreview) {
+    renderDocxPage({ preserveScroll });
+    saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+    updatePaginationControls();
+    return;
+  }
 
   if (state.document.renderHtml) {
     renderRichHtmlDocument();
@@ -965,7 +1292,7 @@ function showPage(pageIndex) {
     return;
   }
 
-  reader.classList.remove("has-rich-document");
+  reader.classList.remove("has-rich-document", "has-docx-preview");
   const page = state.pages[state.pageIndex];
   reader.replaceChildren(
     ...page.blocks.map((block) => {
@@ -975,19 +1302,71 @@ function showPage(pageIndex) {
       element.dataset.blockId = block.id;
       if (block.html) {
         element.innerHTML = window.DOMPurify.sanitize(block.html);
+        if (block.type === "heading") {
+          const heading = element.querySelector("h1, h2, h3, h4, h5, h6");
+          if (heading) element.dataset.headingLevel = heading.tagName.slice(1);
+        }
       } else {
         element.textContent = block.text;
       }
       return element;
     })
   );
-  reader.scrollTop = 0;
+  reader.scrollTop = preserveScroll ? previousScrollTop : 0;
   highlightReaderMatches();
+  applySavedAnnotations(reader);
   saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
   updatePaginationControls();
 }
 
+function renderDocxPage({ preserveScroll = false } = {}) {
+  reader.classList.remove("has-rich-document");
+  reader.classList.add("has-docx-preview");
+  const { host, sections } = state.docxPreview;
+  const page = state.pages[state.pageIndex];
+  const sectionIndex = page?.sectionIndex ?? state.pageIndex;
+  for (const [index, section] of sections.entries()) {
+    section.hidden = index !== sectionIndex;
+  }
+  if (reader.firstElementChild !== host) reader.replaceChildren(host);
+  const currentSection = sections[sectionIndex];
+  clearInlineMarks(currentSection, ".reader-search-hit");
+  clearAnnotationDecorations(currentSection);
+  applySavedAnnotations(currentSection);
+  highlightReaderMatches();
+  applyReadingSettings();
+  if (!preserveScroll) {
+    const zoom = state.readingSettings.fontScale / 100;
+    reader.scrollTop = (page?.offsetTop || 0) * zoom;
+  }
+}
+
+function syncDocxPageFromScroll() {
+  if (!state.docxPreview || state.pages.length === 0) return;
+  if (state.docxScrollFrame) cancelAnimationFrame(state.docxScrollFrame);
+  state.docxScrollFrame = requestAnimationFrame(() => {
+    state.docxScrollFrame = null;
+    const currentPage = state.pages[state.pageIndex];
+    if (!currentPage) return;
+    const zoom = state.readingSettings.fontScale / 100;
+    const sectionPageIndex = Math.min(
+      currentPage.sectionPageCount - 1,
+      Math.max(0, Math.floor((reader.scrollTop / zoom + 1) / currentPage.pageHeight))
+    );
+    const nextPageIndex = state.pages.findIndex(
+      (page) =>
+        page.sectionIndex === currentPage.sectionIndex &&
+        page.sectionPageIndex === sectionPageIndex
+    );
+    if (nextPageIndex < 0 || nextPageIndex === state.pageIndex) return;
+    state.pageIndex = nextPageIndex;
+    saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+    updatePaginationControls();
+  });
+}
+
 function renderRichHtmlDocument() {
+  reader.classList.remove("has-docx-preview");
   reader.classList.add("has-rich-document");
   const frame = document.createElement("iframe");
   frame.className = "reader-rich-frame";
@@ -1003,13 +1382,21 @@ function renderRichHtmlDocument() {
     frameDocument.addEventListener("mousedown", () => {
       selectionMenu.hidden = true;
       state.selection = { text: "", blockIds: [] };
+      state.activeAnnotationId = null;
     });
     frameDocument.addEventListener("click", (event) => {
+      const mark = event.target?.closest?.("[data-annotation-id]");
+      if (mark) {
+        showAnnotationMenu(mark, frame);
+        return;
+      }
       handleRichDocumentLink(event, frame);
     });
     if (state.readerQuery) {
       frame.contentWindow?.find(state.readerQuery, false, false, true);
     }
+    applyReadingSettingsToFrame(frame);
+    applySavedAnnotations(frameDocument.body, frameDocument);
   });
   reader.replaceChildren(frame);
 }
@@ -1021,6 +1408,19 @@ function highlightReaderMatches() {
   const pageMatches = state.searchMatches.filter(
     (match) => match.pageIndex === state.pageIndex
   );
+  if (state.docxPreview) {
+    const sectionIndex = state.pages[state.pageIndex]?.sectionIndex ?? state.pageIndex;
+    const marks = highlightTextNodes(
+      state.docxPreview.sections[sectionIndex],
+      state.readerQuery
+    );
+    const activeOccurrence = pageMatches.findIndex((match) => match === activeMatch);
+    if (activeOccurrence >= 0 && marks[activeOccurrence]) {
+      marks[activeOccurrence].classList.add("is-active");
+      marks[activeOccurrence].scrollIntoView({ block: "center" });
+    }
+    return;
+  }
   for (const block of reader.querySelectorAll(".doc-block")) {
     const marks = highlightTextNodes(block, state.readerQuery);
     const blockId = Number(block.dataset.blockId);
@@ -1031,6 +1431,15 @@ function highlightReaderMatches() {
       marks[activeOccurrence].classList.add("is-active");
       marks[activeOccurrence].scrollIntoView({ block: "center" });
     }
+  }
+}
+
+function clearInlineMarks(root, selector) {
+  if (!root) return;
+  for (const mark of root.querySelectorAll(selector)) {
+    const parent = mark.parentNode;
+    mark.replaceWith(...mark.childNodes);
+    parent?.normalize();
   }
 }
 
@@ -1141,8 +1550,8 @@ function updatePaginationControls() {
     (document) => Number(document.id) === Number(state.document?.id)
   );
   pageIndicator.textContent = state.document
-    ? `${documentIndex + 1}/${categoryDocuments.length} · ${current}/${total}`
-    : `${current} / ${total}`;
+    ? `文档 ${documentIndex + 1}/${categoryDocuments.length} · 页 ${current}/${total}`
+    : `页 ${current}/${total}`;
 
   const previousDocument = getAdjacentDocument(
     state.documents,
@@ -1162,6 +1571,13 @@ function updatePaginationControls() {
     state.busy || (!nextDocument && state.pageIndex >= total - 1);
   explainPageButton.disabled = state.busy || !state.document;
   deepPageButton.disabled = state.busy || !state.document;
+  bookmarkPageButton.disabled = state.busy || !state.document;
+  const bookmark = state.document?.annotations?.find(
+    (annotation) => annotation.kind === "bookmark" && annotation.pageIndex === state.pageIndex
+  );
+  bookmarkPageButton.textContent = bookmark ? "★" : "☆";
+  bookmarkPageButton.title = bookmark ? "取消当前页书签" : "收藏当前页";
+  bookmarkPageButton.setAttribute("aria-label", bookmarkPageButton.title);
 }
 
 function renderHistory(records) {
@@ -1181,13 +1597,7 @@ function renderHistory(records) {
 
   answerList.replaceChildren(
     ...visibleRecords.map((record) =>
-      createAnswerElement({
-        mode: record.mode,
-        answer: record.answer,
-        provider: record.provider,
-        selectedText: record.selectedText,
-        createdAt: record.createdAt
-      })
+      createAnswerElement(record)
     )
   );
 }
@@ -1197,8 +1607,16 @@ function createAnswerElement(record) {
   item.className = "answer-item";
   item.dataset.mode = record.mode;
 
+  const header = document.createElement("div");
+  header.className = "answer-item-header";
   const title = document.createElement("strong");
   title.textContent = modeLabel(record.mode);
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.dataset.saveRecord = record.id;
+  saveButton.textContent = record.saved ? "已沉淀" : "沉淀";
+  saveButton.title = record.saved ? "在沉淀视图中查看" : "保存这条回答";
+  header.append(title, saveButton);
 
   const body = document.createElement("div");
   body.className = "answer-body";
@@ -1207,7 +1625,7 @@ function createAnswerElement(record) {
   const meta = document.createElement("small");
   meta.textContent = formatAnswerMeta(record);
 
-  item.append(title, body, meta);
+  item.append(header, body, meta);
   return item;
 }
 
@@ -1233,6 +1651,38 @@ function captureSelection() {
 
 function showSelectionMenu({ text, blockIds, rect }) {
   state.selection = { text, blockIds };
+  state.activeAnnotationId = null;
+  selectionMenu.dataset.mode = "selection";
+  positionSelectionMenu(rect);
+}
+
+function showAnnotationMenu(target, frame = null) {
+  const annotationId = Number(target.dataset.annotationId);
+  const annotation = state.document?.annotations?.find(
+    (item) => Number(item.id) === annotationId
+  );
+  if (!annotation) return;
+  const targetRect = target.getBoundingClientRect();
+  const frameRect = frame?.getBoundingClientRect();
+  const rect = frameRect
+    ? {
+        left: frameRect.left + targetRect.left,
+        width: targetRect.width,
+        bottom: frameRect.top + targetRect.bottom
+      }
+    : targetRect;
+  state.activeAnnotationId = annotationId;
+  state.selection = {
+    text: annotation.selectedText || "",
+    blockIds: annotation.blockIds || []
+  };
+  selectionMenu.dataset.mode = "annotation";
+  const removeButton = selectionMenu.querySelector("[data-action='remove-annotation']");
+  removeButton.textContent = annotation.kind === "highlight" ? "取消高亮" : "删除批注";
+  positionSelectionMenu(rect);
+}
+
+function positionSelectionMenu(rect) {
   selectionMenu.hidden = false;
   selectionMenu.classList.remove("is-docked");
 
@@ -1248,6 +1698,438 @@ function showSelectionMenu({ text, blockIds, rect }) {
   selectionMenu.classList.toggle("is-docked", position.docked);
   selectionMenu.style.left = `${position.left}px`;
   selectionMenu.style.top = `${position.top}px`;
+}
+
+function showAiView(view) {
+  state.aiView = view === "knowledge" ? "knowledge" : "analysis";
+  const showingKnowledge = state.aiView === "knowledge";
+  analysisView.hidden = showingKnowledge;
+  knowledgeView.hidden = !showingKnowledge;
+  analysisTab.setAttribute("aria-selected", String(!showingKnowledge));
+  knowledgeTab.setAttribute("aria-selected", String(showingKnowledge));
+  analysisTab.dataset.active = String(!showingKnowledge);
+  knowledgeTab.dataset.active = String(showingKnowledge);
+  if (showingKnowledge) renderAnnotations();
+}
+
+function openAnnotationDialog() {
+  if (!state.selection.text) return;
+  state.pendingAnnotation = {
+    text: state.selection.text,
+    blockIds: [...state.selection.blockIds]
+  };
+  annotationExcerpt.textContent = state.selection.text.slice(0, 260);
+  annotationNote.value = "";
+  annotationDialog.showModal();
+  annotationNote.focus();
+}
+
+async function createAnnotation(kind, note = "", sourceSelection = null) {
+  if (!state.document) return;
+  const selection = sourceSelection || state.selection;
+  setBusy(true, kind === "note" ? "正在保存批注" : "正在保存高亮");
+  try {
+    const response = await fetch("/api/annotations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        documentId: state.document.id,
+        kind,
+        pageIndex: state.pageIndex,
+        selectedText: selection.text,
+        blockIds: selection.blockIds,
+        note,
+        color: "yellow"
+      })
+    });
+    const annotation = await readJson(response);
+    state.document.annotations = [annotation, ...(state.document.annotations || [])];
+    refreshCurrentAnnotations();
+    renderAnnotations();
+    setStatus(kind === "note" ? "批注已保存" : "高亮已保存");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function togglePageBookmark() {
+  if (!state.document) return;
+  const bookmark = state.document.annotations?.find(
+    (annotation) => annotation.kind === "bookmark" && annotation.pageIndex === state.pageIndex
+  );
+  if (bookmark) {
+    await deleteAnnotation(bookmark.id);
+    return;
+  }
+  setBusy(true, "正在保存书签");
+  try {
+    const response = await fetch("/api/annotations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        documentId: state.document.id,
+        kind: "bookmark",
+        pageIndex: state.pageIndex,
+        selectedText: "",
+        blockIds: state.pages[state.pageIndex]?.blockIds || []
+      })
+    });
+    const annotation = await readJson(response);
+    state.document.annotations = [annotation, ...(state.document.annotations || [])];
+    renderAnnotations();
+    updatePaginationControls();
+    setStatus("书签已保存");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function updateAnnotation(id, note) {
+  setBusy(true, "正在更新批注");
+  try {
+    const response = await fetch(`/api/annotations/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ note })
+    });
+    const updated = await readJson(response);
+    state.document.annotations = state.document.annotations.map((annotation) =>
+      Number(annotation.id) === Number(id) ? updated : annotation
+    );
+    renderAnnotations();
+    setStatus("标注已更新");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function deleteAnnotation(id) {
+  setBusy(true, "正在删除标注");
+  try {
+    const response = await fetch(`/api/annotations/${id}`, { method: "DELETE" });
+    await readJson(response);
+    state.document.annotations = state.document.annotations.filter(
+      (annotation) => Number(annotation.id) !== Number(id)
+    );
+    refreshCurrentAnnotations();
+    renderAnnotations();
+    setStatus("标注已删除");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderAnnotations() {
+  const annotations = state.document?.annotations || [];
+  if (annotations.length === 0) {
+    annotationList.replaceChildren(emptyText(state.document ? "当前文章暂无标注" : "请先选择文章"));
+    return;
+  }
+  annotationList.replaceChildren(...annotations.map(createAnnotationElement));
+}
+
+function createAnnotationElement(annotation) {
+  const item = document.createElement("article");
+  item.className = "knowledge-item";
+  item.dataset.kind = annotation.kind;
+
+  const header = document.createElement("div");
+  header.className = "knowledge-item-header";
+  const title = document.createElement("strong");
+  title.textContent = annotationKindLabel(annotation.kind);
+  const jump = document.createElement("button");
+  jump.type = "button";
+  jump.dataset.annotationAction = "jump";
+  jump.dataset.annotationId = annotation.id;
+  jump.textContent = `第 ${annotation.pageIndex + 1} 页`;
+  header.append(title, jump);
+  item.append(header);
+
+  if (annotation.selectedText) {
+    const excerpt = document.createElement("blockquote");
+    excerpt.textContent = annotation.selectedText;
+    item.append(excerpt);
+  }
+
+  const note = document.createElement("textarea");
+  note.rows = 3;
+  note.maxLength = 20000;
+  note.placeholder = annotation.kind === "bookmark" ? "添加书签备注" : "补充笔记";
+  note.value = annotation.note || "";
+  item.append(note);
+
+  const actions = document.createElement("div");
+  actions.className = "knowledge-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.dataset.annotationAction = "save";
+  save.dataset.annotationId = annotation.id;
+  save.textContent = "保存";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.dataset.annotationAction = "delete";
+  remove.dataset.annotationId = annotation.id;
+  remove.textContent = "删除";
+  actions.append(save, remove);
+  item.append(actions);
+  return item;
+}
+
+async function loadKnowledgeItems() {
+  try {
+    const response = await fetch("/api/knowledge");
+    const payload = await readJson(response);
+    state.knowledgeItems = payload.items || [];
+    renderKnowledgeItems();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+function renderKnowledgeItems() {
+  if (state.knowledgeItems.length === 0) {
+    knowledgeList.replaceChildren(emptyText("还没有沉淀 AI 回答"));
+    return;
+  }
+  knowledgeList.replaceChildren(...state.knowledgeItems.map(createKnowledgeElement));
+}
+
+function createKnowledgeElement(record) {
+  const item = document.createElement("article");
+  item.className = "knowledge-item";
+
+  const title = document.createElement("input");
+  title.type = "text";
+  title.maxLength = 160;
+  title.value = record.savedTitle || defaultKnowledgeTitle(record);
+  title.dataset.knowledgeTitle = "";
+
+  const source = document.createElement("small");
+  source.textContent = `${record.documentTitle} · ${modeLabel(record.mode)}`;
+
+  if (record.selectedText) {
+    const excerpt = document.createElement("blockquote");
+    excerpt.textContent = record.selectedText;
+    item.append(title, source, excerpt);
+  } else {
+    item.append(title, source);
+  }
+
+  const answer = document.createElement("div");
+  answer.className = "knowledge-answer answer-body";
+  answer.innerHTML = renderMarkdown(record.answer);
+
+  const note = document.createElement("textarea");
+  note.rows = 3;
+  note.maxLength = 20000;
+  note.placeholder = "补充自己的理解或后续行动";
+  note.value = record.savedNote || "";
+  note.dataset.knowledgeNote = "";
+
+  const actions = document.createElement("div");
+  actions.className = "knowledge-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.dataset.knowledgeAction = "save";
+  save.dataset.recordId = record.id;
+  save.textContent = "保存修改";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.dataset.knowledgeAction = "remove";
+  remove.dataset.recordId = record.id;
+  remove.textContent = "移出沉淀";
+  actions.append(save, remove);
+  item.append(answer, note, actions);
+  return item;
+}
+
+async function saveAiRecord(record, values) {
+  setBusy(true, values.saved ? "正在保存沉淀" : "正在移出沉淀");
+  try {
+    const response = await fetch(`/api/ai/records/${record.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(values)
+    });
+    const updated = await readJson(response);
+    if (state.document && Number(record.documentId || state.document.id) === Number(state.document.id)) {
+      state.document.aiRecords = state.document.aiRecords.map((item) =>
+        Number(item.id) === Number(updated.id) ? updated : item
+      );
+      renderHistory(state.document.aiRecords);
+    }
+    await loadKnowledgeItems();
+    setStatus(values.saved ? "AI 回答已沉淀" : "已移出沉淀");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function defaultKnowledgeTitle(record) {
+  const excerpt = String(record.selectedText || record.question || "").replace(/\s+/g, " ").trim();
+  return excerpt ? `${modeLabel(record.mode)} · ${excerpt.slice(0, 42)}` : modeLabel(record.mode);
+}
+
+function annotationKindLabel(kind) {
+  return kind === "note" ? "批注" : kind === "bookmark" ? "书签" : "高亮";
+}
+
+function applySavedAnnotations(root, ownerDocument = document) {
+  const annotations = (state.document?.annotations || []).filter(
+    (annotation) => annotation.kind !== "bookmark" && annotationBelongsToRoot(annotation, root)
+  );
+  for (const annotation of annotations) {
+    if (root === reader && annotation.blockIds?.length) {
+      const blocks = annotation.blockIds
+        .map((id) => root.querySelector(`[data-block-id="${id}"]`))
+        .filter(Boolean);
+      if (blocks.length === 1 && annotation.selectedText) {
+        const highlighted = highlightExactText(
+          blocks[0],
+          annotation.selectedText,
+          annotation.color,
+          ownerDocument,
+          annotation.id
+        );
+        if (!highlighted) {
+          blocks[0].classList.add("has-saved-highlight");
+          blocks[0].dataset.annotationId = String(annotation.id);
+        }
+      } else {
+        for (const block of blocks) {
+          block.classList.add("has-saved-highlight");
+          block.dataset.annotationId = String(annotation.id);
+        }
+      }
+      for (const block of blocks) {
+        if (annotation.kind === "note") block.classList.add("has-saved-note");
+        if (annotation.note) block.title = annotation.note;
+      }
+      continue;
+    }
+    if (annotation.selectedText) {
+      highlightExactText(
+        root,
+        annotation.selectedText,
+        annotation.color,
+        ownerDocument,
+        annotation.id
+      );
+    }
+  }
+}
+
+function annotationBelongsToRoot(annotation, root) {
+  if (!state.docxPreview) return annotation.pageIndex === state.pageIndex;
+  const currentPage = state.pages[state.pageIndex];
+  const annotationPage = state.pages[annotation.pageIndex];
+  const currentSection = state.docxPreview.sections[currentPage?.sectionIndex];
+  return root === currentSection && annotationPage?.sectionIndex === currentPage?.sectionIndex;
+}
+
+function refreshCurrentAnnotations() {
+  const frame = reader.querySelector(".reader-rich-frame");
+  if (frame?.contentDocument?.body) {
+    const scrollX = frame.contentWindow?.scrollX || 0;
+    const scrollY = frame.contentWindow?.scrollY || 0;
+    clearAnnotationDecorations(frame.contentDocument.body);
+    applySavedAnnotations(frame.contentDocument.body, frame.contentDocument);
+    frame.contentWindow?.scrollTo(scrollX, scrollY);
+    return;
+  }
+
+  const scrollTop = reader.scrollTop;
+  const root = state.docxPreview
+    ? state.docxPreview.sections[state.pages[state.pageIndex]?.sectionIndex]
+    : reader;
+  clearAnnotationDecorations(root);
+  applySavedAnnotations(root);
+  reader.scrollTop = scrollTop;
+}
+
+function clearAnnotationDecorations(root) {
+  if (!root) return;
+  clearInlineMarks(root, ".saved-highlight");
+  for (const element of root.querySelectorAll(
+    ".has-saved-highlight, .has-saved-note, [data-annotation-id]"
+  )) {
+    element.classList.remove("has-saved-highlight", "has-saved-note");
+    element.removeAttribute("data-annotation-id");
+    if (element.classList.contains("doc-block")) element.removeAttribute("title");
+  }
+}
+
+function highlightExactText(root, selectedText, color, ownerDocument, annotationId) {
+  const needle = String(selectedText).trim();
+  if (!needle) return false;
+  const showText = ownerDocument.defaultView?.NodeFilter?.SHOW_TEXT || NodeFilter.SHOW_TEXT;
+  const walker = ownerDocument.createTreeWalker(root, showText);
+  const nodes = [];
+  let combinedText = "";
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    nodes.push({ node, start: combinedText.length });
+    combinedText += node.nodeValue || "";
+  }
+  const matchStart = combinedText.indexOf(needle);
+  if (matchStart < 0) return false;
+  const matchEnd = matchStart + needle.length;
+  const startEntry = [...nodes].reverse().find((entry) => entry.start <= matchStart);
+  const endEntry = [...nodes].reverse().find((entry) => entry.start < matchEnd);
+  if (!startEntry || !endEntry) return false;
+
+  const range = ownerDocument.createRange();
+  range.setStart(startEntry.node, matchStart - startEntry.start);
+  range.setEnd(endEntry.node, matchEnd - endEntry.start);
+  const mark = ownerDocument.createElement("mark");
+  mark.className = "saved-highlight";
+  mark.dataset.color = color || "yellow";
+  mark.dataset.annotationId = String(annotationId);
+  mark.append(range.extractContents());
+  range.insertNode(mark);
+  return true;
+}
+
+function downloadFrom(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+async function restoreBackup(file) {
+  if (!window.confirm("恢复会替换当前全部文章、标注和 AI 记录。确定继续吗？")) return;
+  setBusy(true, "正在恢复备份");
+  try {
+    const snapshot = JSON.parse(await file.text());
+    const response = await fetch("/api/backup/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(snapshot)
+    });
+    const result = await readJson(response);
+    clearDocumentView();
+    await loadDocumentList();
+    if (state.documents[0]) await loadDocument(state.documents[0].id, "first");
+    await loadKnowledgeItems();
+    setStatus(`已恢复 ${result.documentCount} 篇文章`);
+  } catch (error) {
+    setStatus(`恢复失败：${error.message}`, true);
+  } finally {
+    setBusy(false);
+  }
 }
 
 function fileToBase64(file) {

@@ -15,10 +15,13 @@
     "config:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/config-ai.ps1",
     "test": "node --test",
     "test:unit": "node --test test/*.test.js",
-    "release:check": "npm test && npm audit --omit=dev --audit-level=moderate"
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install firefox",
+    "release:check": "npm test && npm audit --omit=dev --audit-level=moderate --registry=https://registry.npmjs.org"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
+    "docx-preview": "^0.4.0",
     "dompurify": "^3.4.12",
     "express": "^4.22.1",
     "mammoth": "^1.8.0",
@@ -27,6 +30,7 @@
     "sanitize-html": "^2.13.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "jsdom": "^29.1.1"
   }
 }

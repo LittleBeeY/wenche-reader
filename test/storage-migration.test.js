@@ -45,4 +45,16 @@ test("migrates existing documents into the unclassified category", async (t) => 
   assert.equal(document.formatVersion, 1);
   assert.equal(document.renderHtml, "");
   assert.equal(document.blocks[0].html, "");
+  assert.deepEqual(document.annotations, []);
+
+  const aiColumns = storage.db.prepare("PRAGMA table_info(ai_records)").all();
+  assert.ok(aiColumns.some((column) => column.name === "saved"));
+  assert.ok(aiColumns.some((column) => column.name === "saved_title"));
+  assert.ok(aiColumns.some((column) => column.name === "saved_note"));
+  assert.ok(aiColumns.some((column) => column.name === "saved_at"));
+  assert.ok(
+    storage.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'annotations'")
+      .get()
+  );
 });

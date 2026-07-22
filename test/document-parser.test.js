@@ -66,6 +66,26 @@ test("parses DOCX paragraphs", async () => {
   assert.deepEqual(result.blocks.map((block) => block.text), ["Hello DOCX"]);
 });
 
+test("preserves common DOCX styles and table structure", async () => {
+  const result = await parseDocumentBuffer({
+    originalName: "formatted.docx",
+    buffer: createFormattedDocx()
+  });
+
+  assert.equal(result.title, "Formatted report");
+  const heading = result.blocks.find((block) => block.type === "heading");
+  const paragraph = result.blocks.find((block) => block.type === "paragraph");
+  const table = result.blocks.find((block) => block.type === "table");
+
+  assert.match(heading.html, /class="docx-title"/);
+  assert.match(paragraph.html, /<strong>Bold<\/strong>/);
+  assert.match(paragraph.html, /<em>Italic<\/em>/);
+  assert.match(paragraph.html, /class="docx-underline"/);
+  assert.match(table.html, /<table>/);
+  assert.match(table.html, /<td><p>Cell A<\/p><\/td>/);
+  assert.match(table.html, /<td><p>Cell B<\/p><\/td>/);
+});
+
 test("rejects DOCX archives with suspicious compression ratios", async () => {
   const zip = new AdmZip();
   zip.addFile("word/document.xml", Buffer.alloc(2 * 1024 * 1024, "x"));
@@ -114,6 +134,20 @@ test("preserves sanitized html tables and inline formatting", async () => {
   assert.match(table.html, /<th>Name<\/th>/);
   assert.match(table.html, /<td><em>95<\/em><\/td>/);
   assert.ok(!table.html.includes("onclick"));
+});
+
+test("keeps safe embedded images as readable blocks", async () => {
+  const result = await parseDocumentBuffer({
+    originalName: "illustrated.html",
+    buffer: Buffer.from(
+      '<p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Figure one" onerror="evil()"></p>',
+      "utf8"
+    )
+  });
+
+  assert.equal(result.blocks[0].text, "Figure one");
+  assert.match(result.blocks[0].html, /<img src="data:image\/gif;base64,/);
+  assert.ok(!result.blocks[0].html.includes("onerror"));
 });
 
 test("preserves safe html layout css while removing active content", async () => {
@@ -182,4 +216,28 @@ function createMinimalPdf(text) {
     "JVBERi0xLjMKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3VyY2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9CYXNlRm9udCAvSGVsdmV0aWNhIC9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nIC9OYW1lIC9GMSAvU3VidHlwZSAvVHlwZTEgL1R5cGUgL0ZvbnQKPj4KZW5kb2JqCjMgMCBvYmoKPDwKL0NvbnRlbnRzIDcgMCBSIC9NZWRpYUJveCBbIDAgMCA2MTIgNzkyIF0gL1BhcmVudCA2IDAgUiAvUmVzb3VyY2VzIDw8Ci9Gb250IDEgMCBSIC9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+IC9Sb3RhdGUgMCAvVHJhbnMgPDwKCj4+IAogIC9UeXBlIC9QYWdlCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9QYWdlTW9kZSAvVXNlTm9uZSAvUGFnZXMgNiAwIFIgL1R5cGUgL0NhdGFsb2cKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0F1dGhvciAoYW5vbnltb3VzKSAvQ3JlYXRpb25EYXRlIChEOjIwMjYwNzIyMTYxMTAyKzA4JzAwJykgL0NyZWF0b3IgKGFub255bW91cykgL0tleXdvcmRzICgpIC9Nb2REYXRlIChEOjIwMjYwNzIyMTYxMTAyKzA4JzAwJykgL1Byb2R1Y2VyIChSZXBvcnRMYWIgUERGIExpYnJhcnkgLSBcKG9wZW5zb3VyY2VcKSkgCiAgL1N1YmplY3QgKHVuc3BlY2lmaWVkKSAvVGl0bGUgKHVudGl0bGVkKSAvVHJhcHBlZCAvRmFsc2UKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL0NvdW50IDEgL0tpZHMgWyAzIDAgUiBdIC9UeXBlIC9QYWdlcwo+PgplbmRvYmoKNyAwIG9iago8PAovTGVuZ3RoIDg0Cj4+CnN0cmVhbQoxIDAgMCAxIDAgMCBjbSAgQlQgL0YxIDEyIFRmIDE0LjQgVEwgRVQKQlQgMSAwIDAgMSA3MiA3MjAgVG0gKEhlbGxvIFBERikgVGogVCogRVQKIAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA4CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDA2MSAwMDAwMCBuIAowMDAwMDAwMDkyIDAwMDAwIG4gCjAwMDAwMDAxOTkgMDAwMDAgbiAKMDAwMDAwMDM5MiAwMDAwMCBuIAowMDAwMDAwNDYwIDAwMDAwIG4gCjAwMDAwMDA3MjEgMDAwMDAgbiAKMDAwMDAwMDc4MCAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9JRCAKWzxhZDVhMWI3OGQwMTE0MGY4NzYzZmI1ZjgyNTBjYWJhNT48YWQ1YTFiNzhkMDExNDBmODc2M2ZiNWY4MjUwY2FiYTU+XQolIFJlcG9ydExhYiBnZW5lcmF0ZWQgUERGIGRvY3VtZW50IC0tIGRpZ2VzdCAob3BlbnNvdXJjZSkKCi9JbmZvIDUgMCBSCi9Sb290IDQgMCBSCi9TaXplIDgKPj4Kc3RhcnR4cmVmCjkxMwolJUVPRgo=",
     "base64"
   );
+}
+
+function createFormattedDocx() {
+  const zip = new AdmZip();
+  zip.addFile("[Content_Types].xml", Buffer.from(
+    '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>'
+  ));
+  zip.addFile("_rels/.rels", Buffer.from(
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+  ));
+  zip.addFile("word/_rels/document.xml.rels", Buffer.from(
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'
+  ));
+  zip.addFile("word/styles.xml", Buffer.from(
+    '<?xml version="1.0"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/></w:style></w:styles>'
+  ));
+  zip.addFile("word/document.xml", Buffer.from(
+    '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+      '<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Formatted report</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Bold</w:t></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>Italic</w:t></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Underlined</w:t></w:r></w:p>' +
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>' +
+      '</w:body></w:document>'
+  ));
+  return zip.toBuffer();
 }

@@ -20,6 +20,21 @@ const DOCX_LIMITS = Object.freeze({
   maxTotalBytes: 150 * 1024 * 1024,
   maxCompressionRatio: 200
 });
+const DOCX_STYLE_MAP = [
+  "p[style-name='Title'] => h1.docx-title:fresh",
+  "p[style-name='标题'] => h1.docx-title:fresh",
+  "p[style-name='Subtitle'] => p.docx-subtitle:fresh",
+  "p[style-name='副标题'] => p.docx-subtitle:fresh",
+  "p[style-name='Quote'] => blockquote.docx-quote:fresh",
+  "p[style-name='Intense Quote'] => blockquote.docx-quote:fresh",
+  "p[style-name='引用'] => blockquote.docx-quote:fresh",
+  "p[style-name='Caption'] => p.docx-caption:fresh",
+  "p[style-name='题注'] => p.docx-caption:fresh",
+  "r[style-name='Strong'] => strong",
+  "r[style-name='Emphasis'] => em",
+  "u => span.docx-underline",
+  "strike => del"
+];
 
 export function isSupportedFile(originalName) {
   return SUPPORTED_EXTENSIONS.has(path.extname(originalName).toLowerCase());
@@ -53,7 +68,10 @@ export async function parseDocumentBuffer({ originalName, buffer }) {
 
   if (extension === ".docx") {
     validateZipEntries(new AdmZip(buffer).getEntries(), "DOCX", DOCX_LIMITS);
-    const parsed = await mammoth.convertToHtml({ buffer });
+    const parsed = await mammoth.convertToHtml(
+      { buffer },
+      { styleMap: DOCX_STYLE_MAP, includeDefaultStyleMap: true }
+    );
     return parseHtml(originalName, parsed.value || "");
   }
 
@@ -98,6 +116,7 @@ function parseHtml(originalName, html, options = {}) {
       "ul",
       "ol",
       "li",
+      "span",
       "strong",
       "em",
       "b",
@@ -113,14 +132,24 @@ function parseHtml(originalName, html, options = {}) {
       "code",
       "hr",
       "a",
+      "img",
       "del",
       "sub",
       "sup"
     ],
     allowedAttributes: {
-      a: ["href", "title"]
+      "*": ["class"],
+      a: ["href", "title", "class"],
+      img: ["src", "alt", "title", "width", "height", "class"],
+      ol: ["start", "class"],
+      li: ["value", "class"],
+      th: ["colspan", "rowspan", "scope", "class"],
+      td: ["colspan", "rowspan", "class"]
     },
     allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: {
+      img: ["data"]
+    },
     disallowedTagsMode: "discard"
   });
 
@@ -203,17 +232,18 @@ function validateZipEntries(entries, label, limits) {
 
 function extractHtmlBlocks(html) {
   const blocks = [];
-  const blockPattern = /<(table|ul|ol|pre|blockquote|h[1-6]|p)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  const blockPattern = /<(table|ul|ol|pre|blockquote|h[1-6]|p)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
   let match;
 
   while ((match = blockPattern.exec(html))) {
     const tag = match[1].toLowerCase();
-    const text = cleanText(htmlToText(match[2]));
+    const content = match[3];
+    const text = cleanText(htmlToText(content)) || imageDescription(content);
     if (!text) continue;
     blocks.push({
       type: blockType(tag),
       text,
-      html: `<${tag}>${match[2]}</${tag}>`,
+      html: `<${tag}${match[2]}>${content}</${tag}>`,
       position: blocks.length
     });
   }
@@ -225,6 +255,15 @@ function extractHtmlBlocks(html) {
   }
 
   return blocks;
+}
+
+function imageDescription(html) {
+  if (!/<img\b/i.test(html)) return "";
+  const altText = [...html.matchAll(/<img\b[^>]*\balt=(?:"([^"]*)"|'([^']*)')[^>]*>/gi)]
+    .map((match) => cleanText(match[1] || match[2] || ""))
+    .filter(Boolean)
+    .join(" ");
+  return altText || "图片";
 }
 
 function splitParagraphs(text) {

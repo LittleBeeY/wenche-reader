@@ -83,12 +83,21 @@
           <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
           <div id="document-list"></div>
         </nav>
+
+        <div class="data-tools" aria-label="本地数据">
+          <span class="meta-label">本地数据</span>
+          <div>
+            <button id="download-backup" type="button">备份</button>
+            <label class="restore-button" for="restore-backup">恢复</label>
+            <input id="restore-backup" type="file" accept="application/json,.json" />
+          </div>
+        </div>
       </aside>
 
       <section class="reader-shell">
         <div class="reader-toolbar">
           <div>
-            <span class="section-label">Reader</span>
+            <span class="section-label">阅读中</span>
             <h2 id="reader-title">上传一篇文章开始阅读</h2>
           </div>
           <div class="reader-search" role="search">
@@ -98,6 +107,37 @@
             <button id="next-match" type="button" title="下一个匹配" aria-label="下一个匹配" disabled>↓</button>
           </div>
           <div class="page-controls" aria-label="分页">
+            <details id="reading-settings" class="reading-settings">
+              <summary title="阅读设置" aria-label="阅读设置"><span aria-hidden="true">Aa</span></summary>
+              <div class="reading-settings-popover" role="group" aria-label="阅读设置选项">
+                <div class="reading-setting-row">
+                  <span>字号</span>
+                  <div class="reading-stepper">
+                    <button id="decrease-font" type="button" title="缩小字号" aria-label="缩小字号">−</button>
+                    <output id="font-scale" aria-live="polite">100%</output>
+                    <button id="increase-font" type="button" title="放大字号" aria-label="放大字号">+</button>
+                  </div>
+                </div>
+                <fieldset>
+                  <legend>内容宽度</legend>
+                  <div class="reading-segments" data-reading-control="contentWidth">
+                    <button type="button" data-value="narrow">窄</button>
+                    <button type="button" data-value="standard">标准</button>
+                    <button type="button" data-value="wide">宽</button>
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>行距</legend>
+                  <div class="reading-segments" data-reading-control="lineHeight">
+                    <button type="button" data-value="compact">紧凑</button>
+                    <button type="button" data-value="comfortable">舒适</button>
+                    <button type="button" data-value="relaxed">宽松</button>
+                  </div>
+                </fieldset>
+                <button id="reset-reading-settings" class="reading-reset" type="button">恢复默认</button>
+              </div>
+            </details>
+            <button id="bookmark-page" class="icon-command" type="button" title="收藏当前页" aria-label="收藏当前页" disabled>☆</button>
             <button id="prev-page" type="button">上一页</button>
             <span id="page-indicator">0 / 0</span>
             <button id="next-page" type="button">下一页</button>
@@ -107,6 +147,9 @@
 
         <article id="reader" class="reader" aria-live="polite"></article>
         <div id="selection-menu" class="selection-menu" hidden>
+          <button data-action="remove-annotation" type="button">取消高亮</button>
+          <button data-action="highlight" type="button">高亮</button>
+          <button data-action="note" type="button">批注</button>
           <button data-action="direct" type="button">解析</button>
           <button data-action="deep" type="button">深入解析</button>
           <button data-action="custom" type="button">自定义问题</button>
@@ -116,7 +159,7 @@
       <aside class="ai-panel" id="ai-panel">
         <div class="ai-header">
           <div class="ai-header-copy">
-            <span class="section-label">AI</span>
+            <span class="section-label">AI 助手</span>
             <h2>解析面板</h2>
           </div>
           <button
@@ -130,31 +173,68 @@
           ><span aria-hidden="true">›</span></button>
         </div>
 
-        <div id="ai-status" class="ai-status">正在检查 AI 接口</div>
-
-        <div class="quick-actions" aria-label="快速解析">
-          <button id="explain-page" type="button">解析当前页</button>
-          <button id="deep-page" type="button">深入解析当前页</button>
+        <div class="ai-view-tabs" role="tablist" aria-label="AI 面板视图">
+          <button id="analysis-tab" type="button" role="tab" aria-selected="true">解析</button>
+          <button id="knowledge-tab" type="button" role="tab" aria-selected="false">沉淀</button>
         </div>
 
-        <div class="question-box">
-          <textarea id="question-input" rows="4" placeholder="输入问题"></textarea>
-          <div class="question-actions">
-            <button id="ask-button" type="button">提问</button>
-            <button id="cancel-ai" type="button" hidden>取消解析</button>
+        <div id="analysis-view" class="ai-view">
+          <div id="ai-status" class="ai-status">正在检查 AI 接口</div>
+
+          <div class="quick-actions" aria-label="快速解析">
+            <button id="explain-page" type="button">解析当前页</button>
+            <button id="deep-page" type="button">深入解析当前页</button>
           </div>
+
+          <div class="question-box">
+            <textarea id="question-input" rows="4" placeholder="围绕选区或全文提问…"></textarea>
+            <div class="question-actions">
+              <button id="ask-button" type="button">提问</button>
+              <button id="cancel-ai" type="button" hidden>取消解析</button>
+            </div>
+          </div>
+
+          <div class="answer-toolbar">
+            <span>解析记录</span>
+            <button id="history-toggle" type="button" hidden>查看全部</button>
+          </div>
+          <div id="answer-list" class="answer-list"></div>
         </div>
 
-        <div class="answer-toolbar">
-          <span>解析记录</span>
-          <button id="history-toggle" type="button" hidden>查看全部</button>
+        <div id="knowledge-view" class="ai-view" hidden>
+          <div class="knowledge-toolbar">
+            <button id="export-current" type="button" title="导出当前文档全部页面的标注与已沉淀回答" disabled>导出本篇沉淀</button>
+            <button id="export-all" type="button" title="导出所有文档的标注与已沉淀回答">导出全部沉淀</button>
+          </div>
+          <section class="knowledge-section">
+            <div class="answer-toolbar"><span>当前文章标注</span></div>
+            <div id="annotation-list" class="knowledge-list"></div>
+          </section>
+          <section class="knowledge-section">
+            <div class="answer-toolbar"><span>AI 回答沉淀</span></div>
+            <div id="knowledge-list" class="knowledge-list"></div>
+          </section>
         </div>
-        <div id="answer-list" class="answer-list"></div>
       </aside>
     </main>
 
+    <dialog id="annotation-dialog" class="annotation-dialog">
+      <form method="dialog">
+        <h2>添加批注</h2>
+        <blockquote id="annotation-excerpt"></blockquote>
+        <label for="annotation-note">批注内容</label>
+        <textarea id="annotation-note" rows="5" maxlength="20000" required></textarea>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="cancel-annotation">取消</button>
+          <button value="save" type="submit">保存批注</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="/vendor/marked.min.js"></script>
     <script src="/vendor/purify.min.js"></script>
+    <script src="/vendor/jszip.min.js"></script>
+    <script src="/vendor/docx-preview.min.js"></script>
     <script src="/app.js" type="module"></script>
   </body>
 </html>

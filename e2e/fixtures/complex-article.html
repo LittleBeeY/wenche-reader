@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>复杂 HTML 测试文章</title>
+    <style>
+      body { color: #1f2d28; font-family: sans-serif; }
+      .layout { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; min-width: 1400px; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #8da29a; padding: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1 id="top">复杂 HTML 测试文章</h1>
+    <div class="layout">
+      <aside><a href="#evidence">查看证据</a></aside>
+      <main>
+        <p style="margin-top: 1200px">这段文字包含 <strong>行内强调</strong> 和安全布局。</p>
+        <table id="evidence">
+          <thead><tr><th>指标</th><th>结果</th></tr></thead>
+          <tbody><tr><td>保真渲染</td><td>通过</td></tr></tbody>
+        </table>
+      </main>
+    </div>
+    <script>window.__unsafeScriptRan = true;</script>
+  </body>
+</html>

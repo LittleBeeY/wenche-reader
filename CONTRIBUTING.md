@@ -7,6 +7,8 @@
 ```powershell
 npm.cmd install
 npm.cmd test
+npm.cmd run test:e2e:install
+npm.cmd run test:e2e
 npm.cmd run dev
 ```
 
@@ -21,6 +23,7 @@ npm.cmd run release:check
 - 新文件格式统一通过 `src/lib/documentParser.js` 接入，并补解析与恶意输入测试。
 - 文档或模型生成的 HTML 在写入 `innerHTML` 前必须清洗。
 - 数据库结构变化必须兼容现有数据，并补迁移测试。
+- 阅读器交互变化应补 Playwright 用例，并至少验证 Chrome、Edge 和 Firefox。
 - AI 厂商差异应留在 provider adapter，不要散落到路由和前端。
 - 不要提交 `.env`、API Key、用户文档、`data/`、`uploads/`、日志或 `node_modules/`。
 

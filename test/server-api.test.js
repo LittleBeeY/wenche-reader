@@ -31,10 +31,15 @@ async function withTestServer(t, options = {}) {
   return `http://127.0.0.1:${port}`;
 }
 
-test("serves Markdown renderer browser dependencies", async (t) => {
+test("serves browser renderer dependencies", async (t) => {
   const baseUrl = await withTestServer(t);
 
-  for (const asset of ["marked.min.js", "purify.min.js"]) {
+  for (const asset of [
+    "marked.min.js",
+    "purify.min.js",
+    "jszip.min.js",
+    "docx-preview.min.js"
+  ]) {
     const response = await fetch(`${baseUrl}/vendor/${asset}`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type"), /javascript/);
@@ -101,6 +106,7 @@ test("uploads a document and reads normalized blocks", async (t) => {
   const document = await readResponse.json();
 
   assert.equal(document.title, "Title");
+  assert.equal(document.formatVersion, 4);
   assert.deepEqual(
     document.blocks.map((block) => [block.type, block.text]),
     [
@@ -108,6 +114,56 @@ test("uploads a document and reads normalized blocks", async (t) => {
       ["paragraph", "Body text"]
     ]
   );
+
+  const sourceResponse = await fetch(`${baseUrl}/api/documents/${uploaded.id}/source`);
+  assert.equal(sourceResponse.status, 200);
+  assert.match(sourceResponse.headers.get("content-type"), /text\/html/);
+  assert.equal(await sourceResponse.text(), "<h1>Title</h1><p>Body text</p>");
+});
+
+test("does not expose source files outside the upload directory", async (t) => {
+  let app;
+  const baseUrl = await withTestServer(t, { onApp: (createdApp) => { app = createdApp; } });
+  const uploadResponse = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "safe.txt",
+      contentBase64: Buffer.from("safe source").toString("base64")
+    })
+  });
+  const uploaded = await uploadResponse.json();
+  app.locals.storage.db
+    .prepare("UPDATE documents SET file_path = ? WHERE id = ?")
+    .run(path.join(tmpdir(), "outside.txt"), uploaded.id);
+
+  const response = await fetch(`${baseUrl}/api/documents/${uploaded.id}/source`);
+  assert.equal(response.status, 500);
+  assert.match((await response.json()).error, /outside the upload directory/);
+});
+
+test("reparses documents created before the current formatting version", async (t) => {
+  let app;
+  const baseUrl = await withTestServer(t, { onApp: (createdApp) => { app = createdApp; } });
+  const uploadResponse = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "legacy.html",
+      contentBase64: Buffer.from("<h1>Fresh title</h1><p>Fresh body</p>").toString("base64")
+    })
+  });
+  const uploaded = await uploadResponse.json();
+  app.locals.storage.db
+    .prepare("UPDATE documents SET title = 'Stale title', format_version = 3 WHERE id = ?")
+    .run(uploaded.id);
+
+  const response = await fetch(`${baseUrl}/api/documents/${uploaded.id}`);
+  const document = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(document.title, "Fresh title");
+  assert.equal(document.formatVersion, 4);
 });
 
 test("rejects invalid base64 and mismatched binary file signatures", async (t) => {
@@ -605,4 +661,166 @@ test("times out an unresponsive AI provider", async (t) => {
 
   assert.equal(response.status, 504);
   assert.deepEqual(await response.json(), { error: "AI provider request timed out" });
+});
+
+test("persists reading annotations and saved AI answers and exports Markdown", async (t) => {
+  const baseUrl = await withTestServer(t);
+  const upload = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "notes.txt",
+      contentBase64: Buffer.from("Important concept.\n\nSupporting evidence.").toString("base64")
+    })
+  });
+  const document = await upload.json();
+
+  const annotationResponse = await fetch(`${baseUrl}/api/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      kind: "note",
+      pageIndex: 0,
+      selectedText: "Important concept",
+      blockIds: [document.blocks[0].id],
+      note: "Connect this to the introduction."
+    })
+  });
+  assert.equal(annotationResponse.status, 201);
+  const annotation = await annotationResponse.json();
+  assert.equal(annotation.kind, "note");
+
+  const bookmarkResponse = await fetch(`${baseUrl}/api/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      kind: "bookmark",
+      pageIndex: 0
+    })
+  });
+  assert.equal(bookmarkResponse.status, 201);
+
+  await fetch(`${baseUrl}/api/ai/explain`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      mode: "deep",
+      selection: { text: "Important concept", blockIds: [document.blocks[0].id] }
+    })
+  });
+  let current = await (await fetch(`${baseUrl}/api/documents/${document.id}`)).json();
+  assert.equal(current.annotations.length, 2);
+  const record = current.aiRecords[0];
+
+  const saveResponse = await fetch(`${baseUrl}/api/ai/records/${record.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      saved: true,
+      title: "核心概念解析",
+      note: "后续复习时重点查看。"
+    })
+  });
+  assert.equal(saveResponse.status, 200);
+  const saved = await saveResponse.json();
+  assert.equal(saved.saved, true);
+  assert.equal(saved.savedTitle, "核心概念解析");
+
+  const knowledge = await (await fetch(`${baseUrl}/api/knowledge`)).json();
+  assert.equal(knowledge.items.length, 1);
+  assert.equal(knowledge.items[0].documentTitle, "notes.txt");
+
+  const exportResponse = await fetch(`${baseUrl}/api/export/markdown?documentId=${document.id}`);
+  assert.equal(exportResponse.status, 200);
+  assert.match(exportResponse.headers.get("content-type"), /text\/markdown/);
+  const markdown = await exportResponse.text();
+  assert.match(markdown, /# notes\.txt/);
+  assert.match(markdown, /Connect this to the introduction/);
+  assert.match(markdown, /核心概念解析/);
+
+  const updateResponse = await fetch(`${baseUrl}/api/annotations/${annotation.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ note: "Updated note." })
+  });
+  assert.equal(updateResponse.status, 200);
+  assert.equal((await updateResponse.json()).note, "Updated note.");
+
+  const deleteResponse = await fetch(`${baseUrl}/api/annotations/${annotation.id}`, {
+    method: "DELETE"
+  });
+  assert.equal(deleteResponse.status, 200);
+  current = await (await fetch(`${baseUrl}/api/documents/${document.id}`)).json();
+  assert.equal(current.annotations.length, 1);
+});
+
+test("backs up and restores documents and reading artifacts without secrets", async (t) => {
+  const baseUrl = await withTestServer(t);
+  const upload = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "backup.txt",
+      category: "备份测试",
+      contentBase64: Buffer.from("Backup body.").toString("base64")
+    })
+  });
+  const document = await upload.json();
+
+  await fetch(`${baseUrl}/api/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      kind: "highlight",
+      pageIndex: 0,
+      selectedText: "Backup body",
+      blockIds: [document.blocks[0].id]
+    })
+  });
+  await fetch(`${baseUrl}/api/ai/explain`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      selection: { text: "Backup body", blockIds: [document.blocks[0].id] }
+    })
+  });
+  const withHistory = await (await fetch(`${baseUrl}/api/documents/${document.id}`)).json();
+  await fetch(`${baseUrl}/api/ai/records/${withHistory.aiRecords[0].id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ saved: true, title: "备份回答" })
+  });
+
+  const backupResponse = await fetch(`${baseUrl}/api/backup`);
+  assert.equal(backupResponse.status, 200);
+  const backup = await backupResponse.json();
+  assert.equal(backup.format, "wenche-reader-backup");
+  assert.equal(backup.version, 1);
+  assert.equal(backup.documents.length, 1);
+  assert.ok(backup.documents[0].originalFileBase64);
+  assert.ok(!JSON.stringify(backup).includes("AI_API_KEY"));
+
+  await fetch(`${baseUrl}/api/documents/${document.id}`, { method: "DELETE" });
+  const restoreResponse = await fetch(`${baseUrl}/api/backup/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(backup)
+  });
+  assert.equal(restoreResponse.status, 200);
+  assert.deepEqual(await restoreResponse.json(), { restored: true, documentCount: 1 });
+
+  const documents = await (await fetch(`${baseUrl}/api/documents`)).json();
+  assert.equal(documents.documents.length, 1);
+  assert.equal(documents.documents[0].category, "备份测试");
+  const restored = await (
+    await fetch(`${baseUrl}/api/documents/${documents.documents[0].id}`)
+  ).json();
+  assert.equal(restored.annotations.length, 1);
+  assert.equal(restored.aiRecords[0].saved, true);
+  assert.equal(restored.aiRecords[0].savedTitle, "备份回答");
 });

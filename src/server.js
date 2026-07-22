@@ -7,11 +7,12 @@ import { APP_INFO } from "./lib/appInfo.js";
 import { createAiProvider } from "./lib/aiProvider.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
 import { loadEnvFile } from "./lib/env.js";
+import { buildReadingMarkdown } from "./lib/markdownExport.js";
 import {
   buildDocumentContext,
   buildSelectionContext
 } from "./lib/selectionContext.js";
-import { Storage } from "./lib/storage.js";
+import { CURRENT_DOCUMENT_FORMAT_VERSION, Storage } from "./lib/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -24,7 +25,11 @@ export const DEFAULT_UPLOAD_LIMITS = Object.freeze({
 
 const MAX_QUESTION_CHARS = 6000;
 const MAX_SELECTION_CHARS = 50000;
+const MAX_NOTE_CHARS = 20000;
+const MAX_BACKUP_BYTES = 150 * 1024 * 1024;
 const VALID_AI_MODES = new Set(["direct", "deep", "custom"]);
+const VALID_ANNOTATION_KINDS = new Set(["highlight", "note", "bookmark"]);
+const VALID_HIGHLIGHT_COLORS = new Set(["yellow", "green", "blue", "rose"]);
 
 export function createApp(options = {}) {
   const dataDir = options.dataDir || path.join(projectRoot, "data");
@@ -38,13 +43,19 @@ export function createApp(options = {}) {
   app.locals.storage = storage;
   app.disable("x-powered-by");
   app.use(setSecurityHeaders);
-  app.use(express.json({ limit: "82mb" }));
+  app.use(express.json({ limit: "220mb" }));
   app.use(express.static(path.join(projectRoot, "public")));
   app.get("/vendor/marked.min.js", (req, res) => {
     res.sendFile(path.join(projectRoot, "node_modules", "marked", "lib", "marked.umd.js"));
   });
   app.get("/vendor/purify.min.js", (req, res) => {
     res.sendFile(path.join(projectRoot, "node_modules", "dompurify", "dist", "purify.min.js"));
+  });
+  app.get("/vendor/jszip.min.js", (req, res) => {
+    res.sendFile(path.join(projectRoot, "node_modules", "jszip", "dist", "jszip.min.js"));
+  });
+  app.get("/vendor/docx-preview.min.js", (req, res) => {
+    res.sendFile(path.join(projectRoot, "node_modules", "docx-preview", "dist", "docx-preview.min.js"));
   });
 
   app.get("/api/documents", (req, res) => {
@@ -98,6 +109,167 @@ export function createApp(options = {}) {
       return res.json(result);
     } catch (error) {
       return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/annotations", (req, res) => {
+    try {
+      const annotation = normalizeAnnotationInput(req.body, storage);
+      return res.status(201).json(storage.createAnnotation(annotation));
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.patch("/api/annotations/:id", (req, res) => {
+    try {
+      const existing = storage.getAnnotation(Number(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Annotation not found" });
+      const note = normalizeBoundedText(req.body?.note, MAX_NOTE_CHARS, "note");
+      const color = normalizeHighlightColor(req.body?.color || existing.color);
+      return res.json(storage.updateAnnotation(existing.id, { note, color }));
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.delete("/api/annotations/:id", (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!storage.deleteAnnotation(id)) {
+        return res.status(404).json({ error: "Annotation not found" });
+      }
+      return res.json({ deleted: true, id });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/ai/records/:id", (req, res) => {
+    try {
+      const existing = storage.getAiRecord(Number(req.params.id));
+      if (!existing) return res.status(404).json({ error: "AI record not found" });
+      const saved = Boolean(req.body?.saved);
+      const title = normalizeBoundedText(
+        req.body?.title || existing.savedTitle || modeTitle(existing.mode),
+        160,
+        "title"
+      );
+      const note = normalizeBoundedText(req.body?.note ?? existing.savedNote, MAX_NOTE_CHARS, "note");
+      return res.json(storage.updateAiRecord(existing.id, { saved, title, note }));
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.get("/api/knowledge", (req, res) => {
+    return res.json({ items: storage.listKnowledgeItems() });
+  });
+
+  app.get("/api/export/markdown", (req, res) => {
+    try {
+      const requestedDocumentId = req.query.documentId
+        ? Number(req.query.documentId)
+        : null;
+      const snapshot = storage.getBackupData();
+      const documents = requestedDocumentId
+        ? snapshot.documents.filter((document) => Number(document.id) === requestedDocumentId)
+        : snapshot.documents;
+      if (requestedDocumentId && documents.length === 0) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      const documentIds = new Set(documents.map((document) => Number(document.id)));
+      const markdown = buildReadingMarkdown({
+        documents,
+        annotations: snapshot.annotations.filter((item) => documentIds.has(Number(item.documentId))),
+        aiRecords: snapshot.aiRecords.filter((item) => documentIds.has(Number(item.documentId))),
+        createdAt: new Date().toISOString()
+      });
+      const date = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="wenche-notes-${date}.md"`);
+      return res.send(markdown);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/backup", async (req, res) => {
+    try {
+      const snapshot = storage.getBackupData();
+      const documents = [];
+      for (const document of snapshot.documents) {
+        let originalFileBase64 = "";
+        try {
+          originalFileBase64 = (await readFile(document.filePath)).toString("base64");
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        const { filePath, ...metadata } = document;
+        documents.push({ ...metadata, originalFileBase64 });
+      }
+      const backup = {
+        format: "wenche-reader-backup",
+        version: 1,
+        createdAt: new Date().toISOString(),
+        archives: snapshot.archives,
+        documents,
+        blocks: snapshot.blocks,
+        aiRecords: snapshot.aiRecords,
+        annotations: snapshot.annotations
+      };
+      const date = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="wenche-backup-${date}.json"`);
+      return res.send(JSON.stringify(backup));
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/backup/restore", async (req, res) => {
+    const createdPaths = [];
+    let restored = false;
+    try {
+      const snapshot = validateBackup(req.body);
+      const oldDocuments = storage.getBackupData().documents;
+      const filePaths = new Map();
+      let totalBytes = 0;
+      await mkdir(uploadDir, { recursive: true });
+
+      for (const document of snapshot.documents) {
+        const buffer = document.originalFileBase64
+          ? decodeUpload(document.originalFileBase64, DEFAULT_UPLOAD_LIMITS.maxFileBytes)
+          : Buffer.alloc(0);
+        totalBytes += buffer.length;
+        if (totalBytes > MAX_BACKUP_BYTES) {
+          throw new HttpError(413, "Backup files exceed the restore size limit");
+        }
+        if (buffer.length > 0) validateFileSignature(document.originalName, buffer);
+        const safeName = `${randomUUID()}-${document.originalName.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_")}`;
+        const filePath = path.join(uploadDir, safeName);
+        await writeFile(filePath, buffer);
+        createdPaths.push(filePath);
+        filePaths.set(Number(document.id), filePath);
+      }
+
+      storage.restoreBackupData(snapshot, filePaths);
+      restored = true;
+      for (const document of oldDocuments) {
+        try {
+          await deleteUploadedFile(document.filePath, uploadDir);
+        } catch {}
+      }
+      return res.json({ restored: true, documentCount: snapshot.documents.length });
+    } catch (error) {
+      if (!restored) {
+        for (const filePath of createdPaths) {
+          try {
+            await unlink(filePath);
+          } catch {}
+        }
+      }
+      return sendError(res, error);
     }
   });
 
@@ -201,10 +373,25 @@ export function createApp(options = {}) {
       if (!document) {
         return res.status(404).json({ error: "Document not found" });
       }
-      if (document.formatVersion < 3) {
+      if (document.formatVersion < CURRENT_DOCUMENT_FORMAT_VERSION) {
         document = await upgradeDocumentFormatting(document, storage);
       }
       return res.json(document);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/documents/:id/source", (req, res) => {
+    try {
+      const document = storage.getDocument(Number(req.params.id));
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      const sourcePath = resolveUploadedFilePath(document.filePath, uploadDir, "access");
+      res.type(path.extname(document.originalName));
+      res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
+      return res.sendFile(sourcePath);
     } catch (error) {
       return res.status(500).json({ error: error.message });
     }
@@ -256,7 +443,7 @@ export function createApp(options = {}) {
 
   app.use((error, req, res, next) => {
     if (error?.type === "entity.too.large") {
-      return res.status(413).json({ error: "Upload request exceeds the 60 MB batch limit" });
+      return res.status(413).json({ error: "Request body exceeds the local size limit" });
     }
     if (error instanceof SyntaxError && "body" in error) {
       return res.status(400).json({ error: "Request body must be valid JSON" });
@@ -347,7 +534,103 @@ function normalizeDocumentIds(ids) {
   );
 }
 
+function normalizeAnnotationInput(input, storage) {
+  const documentId = Number(input?.documentId);
+  if (!Number.isInteger(documentId) || !storage.getDocument(documentId)) {
+    throw new HttpError(404, "Document not found");
+  }
+  const kind = String(input?.kind || "");
+  if (!VALID_ANNOTATION_KINDS.has(kind)) {
+    throw new HttpError(400, "Invalid annotation kind");
+  }
+  const pageIndex = Number(input?.pageIndex || 0);
+  if (!Number.isInteger(pageIndex) || pageIndex < 0) {
+    throw new HttpError(400, "pageIndex must be a non-negative integer");
+  }
+  const selectedText = normalizeBoundedText(input?.selectedText, MAX_SELECTION_CHARS, "selectedText");
+  const note = normalizeBoundedText(input?.note, MAX_NOTE_CHARS, "note");
+  if (kind !== "bookmark" && !selectedText.trim()) {
+    throw new HttpError(400, "Selected text is required for highlights and notes");
+  }
+  const blockIds = normalizeDocumentIds(input?.blockIds);
+  return {
+    documentId,
+    kind,
+    pageIndex,
+    selectedText,
+    blockIds,
+    note,
+    color: normalizeHighlightColor(input?.color)
+  };
+}
+
+function normalizeBoundedText(value, maxChars, field) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length > maxChars) {
+    throw new HttpError(400, `${field} must not exceed ${maxChars} characters`);
+  }
+  return text;
+}
+
+function normalizeHighlightColor(value) {
+  const color = typeof value === "string" && value ? value : "yellow";
+  if (!VALID_HIGHLIGHT_COLORS.has(color)) {
+    throw new HttpError(400, "Invalid highlight color");
+  }
+  return color;
+}
+
+function modeTitle(mode) {
+  return mode === "deep" ? "深入解析" : mode === "custom" ? "自定义提问" : "解析";
+}
+
+function validateBackup(snapshot) {
+  if (snapshot?.format !== "wenche-reader-backup" || snapshot?.version !== 1) {
+    throw new HttpError(400, "Unsupported backup file");
+  }
+  for (const key of ["archives", "documents", "blocks", "aiRecords", "annotations"]) {
+    if (!Array.isArray(snapshot[key])) {
+      throw new HttpError(400, `Backup field ${key} must be an array`);
+    }
+  }
+  if (snapshot.documents.length > 5000) {
+    throw new HttpError(413, "Backup contains too many documents");
+  }
+  const documentIds = new Set();
+  for (const document of snapshot.documents) {
+    const id = Number(document.id);
+    if (!Number.isInteger(id) || id <= 0 || documentIds.has(id)) {
+      throw new HttpError(400, "Backup contains invalid document ids");
+    }
+    if (
+      typeof document.originalName !== "string" ||
+      !document.originalName ||
+      path.basename(document.originalName) !== document.originalName ||
+      !isSupportedFile(document.originalName)
+    ) {
+      throw new HttpError(400, "Backup contains an invalid document name");
+    }
+    documentIds.add(id);
+  }
+  for (const collection of [snapshot.blocks, snapshot.aiRecords, snapshot.annotations]) {
+    if (collection.some((item) => !documentIds.has(Number(item.documentId)))) {
+      throw new HttpError(400, "Backup contains orphaned records");
+    }
+  }
+  return snapshot;
+}
+
 async function deleteUploadedFile(filePath, uploadDir) {
+  const resolvedFile = resolveUploadedFilePath(filePath, uploadDir, "delete");
+
+  try {
+    await unlink(resolvedFile);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+
+function resolveUploadedFilePath(filePath, uploadDir, action) {
   const uploadRoot = path.resolve(uploadDir);
   const resolvedFile = path.resolve(filePath);
   const relativePath = path.relative(uploadRoot, resolvedFile);
@@ -356,14 +639,9 @@ async function deleteUploadedFile(filePath, uploadDir) {
     relativePath.startsWith("..") ||
     path.isAbsolute(relativePath)
   ) {
-    throw new Error("Refusing to delete a file outside the upload directory");
+    throw new Error(`Refusing to ${action} a file outside the upload directory`);
   }
-
-  try {
-    await unlink(resolvedFile);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
+  return resolvedFile;
 }
 
 async function handleAiRequest({
@@ -456,6 +734,7 @@ function setSecurityHeaders(req, res, next) {
     "default-src 'self'",
     "connect-src 'self'",
     "img-src 'self' data:",
+    "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
     "object-src 'none'",
