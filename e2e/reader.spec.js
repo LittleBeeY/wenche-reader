@@ -113,7 +113,9 @@ test("adjusts and persists the reading layout", async ({ page }) => {
   await page.locator("#file-input").setInputFiles({
     name: "layout.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# Layout heading\n\nA comfortable reading layout should remain stable after refresh.")
+    buffer: Buffer.from(
+      `# Layout heading\n\n${"A comfortable reading layout should remain stable after refresh. ".repeat(220)}`
+    )
   });
 
   const headingSizeBefore = await page.locator(".doc-heading").evaluate(
@@ -153,7 +155,24 @@ test("adjusts and persists the reading layout", async ({ page }) => {
   await expect(page.locator("#app-shell")).toHaveClass(/is-immersive/);
   await expect(page.locator("#document-sidebar")).toBeHidden();
   await expect(page.locator("#ai-panel")).toBeHidden();
-  await expect(page.locator(".reader-toolbar")).toBeHidden();
+  await expect(page.locator(".reader-toolbar > div:first-child")).toBeHidden();
+  await expect(page.locator(".reader-search")).toBeHidden();
+  await expect(page.locator(".page-controls")).toBeVisible();
+  await expect(page.locator("#reading-settings")).toBeVisible();
+  await page.locator("#reading-settings > summary").click();
+  await expect(page.locator(".reading-settings-popover")).toBeVisible();
+  const immersiveFontSizeBefore = await page.locator(".doc-heading").evaluate(
+    (element) => Number.parseFloat(getComputedStyle(element).fontSize)
+  );
+  await page.locator("#increase-font").click();
+  const immersiveFontSizeAfter = await page.locator(".doc-heading").evaluate(
+    (element) => Number.parseFloat(getComputedStyle(element).fontSize)
+  );
+  expect(immersiveFontSizeAfter).toBeGreaterThan(immersiveFontSizeBefore);
+  await page.locator("#reading-settings > summary").click();
+  await expect(page.locator("#next-page")).toBeEnabled();
+  await page.locator("#next-page").click();
+  await expect(page.locator("#page-indicator")).toContainText("页 2/");
   await expect(page.locator("#exit-immersive")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("#app-shell")).not.toHaveClass(/is-immersive/);
@@ -164,6 +183,14 @@ test("adjusts and persists the reading layout", async ({ page }) => {
   const box = await page.locator(".reading-settings-popover").boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await page.locator("#reading-settings > summary").click();
+  await page.locator("#immersive-toggle").click();
+  await page.locator("#reading-settings > summary").click();
+  const immersiveBox = await page.locator(".reading-settings-popover").boundingBox();
+  expect(immersiveBox.x).toBeGreaterThanOrEqual(0);
+  expect(immersiveBox.x + immersiveBox.width).toBeLessThanOrEqual(390);
+  expect(immersiveBox.y).toBeGreaterThanOrEqual(0);
+  expect(immersiveBox.y + immersiveBox.height).toBeLessThanOrEqual(844);
 });
 
 test("renders DOCX page styles and scales the complete page", async ({ page }) => {

@@ -1,6 +1,6 @@
 export async function consumeEventStream(response, onEvent = () => {}) {
   if (!response.ok) {
-    let message = `Request failed: ${response.status}`;
+    let message = `请求失败（${response.status}）`;
     const text = await response.text();
     try {
       const payload = JSON.parse(text);
@@ -10,7 +10,13 @@ export async function consumeEventStream(response, onEvent = () => {}) {
     }
     throw new Error(message);
   }
-  if (!response.body) throw new Error("AI stream is unavailable");
+  if (response.headers.get("content-type")?.includes("application/json")) {
+    const payload = await response.json();
+    if (payload.error) throw new Error(payload.error);
+    onEvent("done", payload);
+    return payload;
+  }
+  if (!response.body) throw new Error("AI 流式响应不可用，请重试");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -27,7 +33,7 @@ export async function consumeEventStream(response, onEvent = () => {}) {
     if (!data) return;
     const payload = JSON.parse(data);
     onEvent(event, payload);
-    if (event === "error") throw new Error(payload.error || "AI stream failed");
+    if (event === "error") throw new Error(payload.error || "AI 流式响应失败，请重试");
     if (event === "done") completed = payload;
   };
 
@@ -40,6 +46,6 @@ export async function consumeEventStream(response, onEvent = () => {}) {
     if (done) break;
   }
   if (buffer.trim()) dispatch(buffer);
-  if (!completed) throw new Error("AI stream ended before completion");
+  if (!completed) throw new Error("AI 回答连接提前结束，请重试");
   return completed;
 }

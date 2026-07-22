@@ -822,9 +822,13 @@ async function runAi(mode, question = "") {
     });
     let answer = "";
     await consumeEventStream(response, (event, payload) => {
-      if (event !== "delta") return;
-      answer += payload.delta;
-      updateStreamingAnswer(streamingAnswer, answer);
+      if (event === "delta") {
+        answer += payload.delta;
+        updateStreamingAnswer(streamingAnswer, answer);
+      } else if (event === "done" && !answer && payload.answer) {
+        answer = payload.answer;
+        updateStreamingAnswer(streamingAnswer, answer);
+      }
     });
     questionInput.value = "";
     await refreshDocumentHistory();
