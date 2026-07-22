@@ -13,7 +13,7 @@ npm.cmd install
 npm.cmd start
 ```
 
-默认地址是 `http://localhost:3000`。开发时可以运行：
+默认地址是 `http://127.0.0.1:3000`。开发时可以运行：
 
 ```powershell
 npm.cmd run dev
@@ -26,6 +26,8 @@ scripts\open-reader.cmd
 scripts\config-ai.cmd
 ```
 
+配置脚本会隐藏 API Key 输入，并在保存后请求 provider 的 `/models` 接口。连接检查失败不会删除配置；部分兼容服务不提供该接口，需要启动应用后再实际测试。
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -35,6 +37,7 @@ scripts\config-ai.cmd
 | `AI_API_BASE` | `https://api.openai.com/v1` | OpenAI-compatible API 根地址 |
 | `AI_MODEL` | `gpt-4.1-mini` | 模型标识；一键脚本默认写入 `deepseek-v4-flash` |
 | `PORT` | `3000` | HTTP 端口 |
+| `HOST` | `127.0.0.1` | HTTP 监听地址；保持默认值可避免无意暴露到局域网 |
 
 服务启动时读取项目根目录 `.env`，且不会覆盖已经存在的进程环境变量。修改配置后需要重启服务。
 
@@ -42,8 +45,10 @@ scripts\config-ai.cmd
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/ai/status
+Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/health
 Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/documents
 npm.cmd test
+npm.cmd run release:check
 ```
 
 `/api/ai/status` 只返回 provider、模型和是否配置，不会返回 API Key。
@@ -87,4 +92,4 @@ npm.cmd start
 
 ## 生产前检查
 
-当前服务没有认证、用户隔离、限流或后台任务。不要直接暴露到公网；产品化前至少需要认证、上传配额、隐私授权、请求限流、备份策略和大文件异步解析。
+当前服务没有认证、用户隔离、限流或后台任务。不要把 `HOST` 改成 `0.0.0.0` 后直接暴露到公网；产品化前至少需要认证、用户隔离、隐私授权、请求限流、备份策略和大文件异步解析。

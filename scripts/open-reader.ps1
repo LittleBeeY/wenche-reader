@@ -49,8 +49,8 @@ try {
 }
 
 if (-not $isRunning) {
-  Write-Host "Starting AI Deep Reader at $url"
-  cmd.exe /c start "AI Deep Reader Server" cmd.exe /k "cd /d `"$ProjectRoot`" && npm.cmd start"
+  Write-Host "Starting Wenche Reader at $url"
+  cmd.exe /c start "Wenche Reader Server" cmd.exe /k "cd /d `"$ProjectRoot`" && npm.cmd start"
   Start-Sleep -Seconds 2
 }
 

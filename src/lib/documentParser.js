@@ -2,10 +2,24 @@ import path from "node:path";
 import AdmZip from "adm-zip";
 import mammoth from "mammoth";
 import { marked } from "marked";
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import sanitizeHtml from "sanitize-html";
 
 const SUPPORTED_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".html", ".htm", ".pdf", ".docx", ".epub"]);
+const EPUB_LIMITS = Object.freeze({
+  maxEntries: 2000,
+  maxHtmlEntries: 500,
+  maxEntryBytes: 10 * 1024 * 1024,
+  maxTotalBytes: 100 * 1024 * 1024,
+  maxHtmlBytes: 30 * 1024 * 1024,
+  maxCompressionRatio: 200
+});
+const DOCX_LIMITS = Object.freeze({
+  maxEntries: 5000,
+  maxEntryBytes: 30 * 1024 * 1024,
+  maxTotalBytes: 150 * 1024 * 1024,
+  maxCompressionRatio: 200
+});
 
 export function isSupportedFile(originalName) {
   return SUPPORTED_EXTENSIONS.has(path.extname(originalName).toLowerCase());
@@ -28,11 +42,17 @@ export async function parseDocumentBuffer({ originalName, buffer }) {
   }
 
   if (extension === ".pdf") {
-    const parsed = await pdfParse(buffer);
-    return parsePlainText(originalName, parsed.text || "");
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const parsed = await parser.getText();
+      return parsePlainText(originalName, parsed.text || "");
+    } finally {
+      await parser.destroy();
+    }
   }
 
   if (extension === ".docx") {
+    validateZipEntries(new AdmZip(buffer).getEntries(), "DOCX", DOCX_LIMITS);
     const parsed = await mammoth.convertToHtml({ buffer });
     return parseHtml(originalName, parsed.value || "");
   }
@@ -115,16 +135,30 @@ function parseHtml(originalName, html, options = {}) {
 
 function parseEpub(originalName, buffer) {
   const zip = new AdmZip(buffer);
-  const entries = zip
-    .getEntries()
+  const allEntries = zip.getEntries();
+  validateEpubEntries(allEntries);
+  const entries = allEntries
     .filter((entry) => /\.(xhtml|html|htm)$/i.test(entry.entryName))
     .sort((a, b) => a.entryName.localeCompare(b.entryName));
 
+  if (entries.length === 0) {
+    throw new Error("EPUB does not contain readable HTML content");
+  }
+  if (entries.length > EPUB_LIMITS.maxHtmlEntries) {
+    throw new Error(`EPUB contains more than ${EPUB_LIMITS.maxHtmlEntries} HTML documents`);
+  }
+
   const blocks = [];
   let title = path.basename(originalName);
+  let htmlBytes = 0;
 
   for (const entry of entries) {
-    const parsed = parseHtml(entry.entryName, entry.getData().toString("utf8"));
+    const data = entry.getData();
+    htmlBytes += data.length;
+    if (data.length > EPUB_LIMITS.maxEntryBytes || htmlBytes > EPUB_LIMITS.maxHtmlBytes) {
+      throw new Error("EPUB HTML content exceeds the safe parsing limit");
+    }
+    const parsed = parseHtml(entry.entryName, data.toString("utf8"));
     if (title === path.basename(originalName) && firstHeading(parsed.blocks)) {
       title = firstHeading(parsed.blocks);
     }
@@ -134,6 +168,37 @@ function parseEpub(originalName, buffer) {
   }
 
   return { title, blocks };
+}
+
+function validateEpubEntries(entries) {
+  validateZipEntries(entries, "EPUB", EPUB_LIMITS);
+}
+
+function validateZipEntries(entries, label, limits) {
+  if (entries.length > limits.maxEntries) {
+    throw new Error(`${label} contains more than ${limits.maxEntries} files`);
+  }
+
+  let totalBytes = 0;
+  for (const entry of entries) {
+    const uncompressedSize = Number(entry.header?.size || 0);
+    const compressedSize = Number(entry.header?.compressedSize || 0);
+    totalBytes += uncompressedSize;
+
+    if (uncompressedSize > limits.maxEntryBytes) {
+      throw new Error(`${label} contains an oversized compressed entry`);
+    }
+    if (totalBytes > limits.maxTotalBytes) {
+      throw new Error(`${label} uncompressed content exceeds the safe parsing limit`);
+    }
+    if (
+      compressedSize > 0 &&
+      uncompressedSize > 1024 * 1024 &&
+      uncompressedSize / compressedSize > limits.maxCompressionRatio
+    ) {
+      throw new Error(`${label} contains a suspicious compression ratio`);
+    }
+  }
 }
 
 function extractHtmlBlocks(html) {

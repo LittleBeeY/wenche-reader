@@ -1,0 +1,35 @@
+name: Bug 报告
+description: 报告可复现的功能或兼容性问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: 问题描述
+      description: 请说明实际表现和预期表现。
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 复现步骤
+      description: 请提供最小、连续的复现步骤，并移除私人文档和 API Key。
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: 版本
+      placeholder: 例如 1.0.0
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: 环境
+      placeholder: 例如 Windows 11、Node.js 22.13、Edge 版本号
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: 安全确认
+      options:
+        - label: 我没有提交 API Key、私人文档或数据库文件。
+          required: true

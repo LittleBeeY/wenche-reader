@@ -4,6 +4,7 @@
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)：组件边界、数据流、数据模型、API 和安全约束。
 - [RUNBOOK.md](RUNBOOK.md)：安装、启动、模型配置、备份和故障排查。
+- [SOFTWARE_COPYRIGHT.md](SOFTWARE_COPYRIGHT.md)：V1.0 名称、版本和软著材料基线。
 
 ## 历史实施记录
 

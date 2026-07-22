@@ -1,6 +1,6 @@
-# AI Deep Reader
+# 文澈阅读
 
-本项目是本地优先的 Node.js/Express AI 阅读器。前端为原生 ES modules，数据存储为 `node:sqlite`，不使用前端框架或构建步骤。
+本项目正式名称为“文澈AI深度阅读系统”，品牌名“文澈阅读”。它是本地优先的 Node.js/Express AI 阅读器。前端为原生 ES modules，数据存储为 `node:sqlite`，不使用前端框架或构建步骤。
 
 ## 命令
 
@@ -46,6 +46,7 @@ npm.cmd run config:ai
 | `AI_API_BASE` | OpenAI-compatible API 根地址 |
 | `AI_MODEL` | 模型标识 |
 | `PORT` | HTTP 端口，默认 `3000` |
+| `HOST` | 监听地址，默认 `127.0.0.1` |
 
 ## 文档
 

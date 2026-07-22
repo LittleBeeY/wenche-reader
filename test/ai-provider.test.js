@@ -68,3 +68,38 @@ test("normalizes protocol-relative and bare api base urls", () => {
   assert.equal(normalizeBaseUrl("api.deepseek.com"), "https://api.deepseek.com");
   assert.equal(normalizeBaseUrl("https://api.deepseek.com/"), "https://api.deepseek.com");
 });
+
+test("calls an OpenAI-compatible provider with bounded output", async (t) => {
+  const originalFetch = globalThis.fetch;
+  let requestBody;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "https://api.deepseek.com/chat/completions");
+    assert.equal(options.headers.authorization, "Bearer test-key");
+    requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: "Provider answer" } }]
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  const provider = createAiProvider({
+    provider: "openai-compatible",
+    apiKey: "test-key",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-flash"
+  });
+  const result = await provider.explain({
+    mode: "direct",
+    selectedText: "Selected text",
+    context: "Context",
+    question: "",
+    documentTitle: "Article"
+  });
+
+  assert.equal(result.answer, "Provider answer");
+  assert.equal(requestBody.model, "deepseek-v4-flash");
+  assert.equal(requestBody.max_tokens, 2000);
+  assert.equal(requestBody.temperature, 0.2);
+});

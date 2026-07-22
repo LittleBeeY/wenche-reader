@@ -10,7 +10,10 @@ async function withTestServer(t, options = {}) {
   const app = createApp({
     dataDir: path.join(root, "data"),
     uploadDir: path.join(root, "uploads"),
-    aiProviderConfig: options.aiProviderConfig || { provider: "mock" }
+    aiProvider: options.aiProvider,
+    aiProviderConfig: options.aiProviderConfig || { provider: "mock" },
+    aiRequestTimeoutMs: options.aiRequestTimeoutMs,
+    uploadLimits: options.uploadLimits
   });
   options.onRoot?.(root);
   options.onApp?.(app);
@@ -36,6 +39,29 @@ test("serves Markdown renderer browser dependencies", async (t) => {
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type"), /javascript/);
   }
+});
+
+test("sets browser security headers without exposing Express", async (t) => {
+  const baseUrl = await withTestServer(t);
+  const response = await fetch(baseUrl);
+
+  assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("x-powered-by"), null);
+});
+
+test("reports the V1.0 service identity from the health endpoint", async (t) => {
+  const baseUrl = await withTestServer(t);
+  const response = await fetch(`${baseUrl}/api/health`);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    name: "文澈阅读",
+    fullName: "文澈AI深度阅读系统",
+    version: "1.0.0",
+    status: "ok"
+  });
 });
 
 test("reports ai provider status without exposing secrets", async (t) => {
@@ -82,6 +108,63 @@ test("uploads a document and reads normalized blocks", async (t) => {
       ["paragraph", "Body text"]
     ]
   );
+});
+
+test("rejects invalid base64 and mismatched binary file signatures", async (t) => {
+  const baseUrl = await withTestServer(t);
+
+  const missingName = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contentBase64: "SGVsbG8=" })
+  });
+  assert.equal(missingName.status, 400);
+
+  const invalidBase64 = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "article.txt", contentBase64: "not-base64!" })
+  });
+  assert.equal(invalidBase64.status, 400);
+
+  const fakePdf = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "article.pdf",
+      contentBase64: Buffer.from("plain text").toString("base64")
+    })
+  });
+  assert.equal(fakePdf.status, 400);
+  assert.match((await fakePdf.json()).error, /does not match the PDF extension/);
+});
+
+test("enforces per-file and batch upload limits", async (t) => {
+  const baseUrl = await withTestServer(t, {
+    uploadLimits: { maxFilesPerBatch: 2, maxFileBytes: 4, maxBatchBytes: 6 }
+  });
+
+  const oversized = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "large.txt",
+      contentBase64: Buffer.from("12345").toString("base64")
+    })
+  });
+  assert.equal(oversized.status, 413);
+
+  const tooMany = await fetch(`${baseUrl}/api/documents/batch`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documents: ["a", "b", "c"].map((name) => ({
+        name: `${name}.txt`,
+        contentBase64: Buffer.from(name).toString("base64")
+      }))
+    })
+  });
+  assert.equal(tooMany.status, 413);
 });
 
 test("uploads multiple documents and lists them newest first", async (t) => {
@@ -485,4 +568,41 @@ test("answers a custom question with document context when no text is selected",
   assert.equal(askResponse.status, 200);
   const answer = await askResponse.json();
   assert.match(answer.answer, /光合作用把光能转化为化学能/);
+});
+
+test("times out an unresponsive AI provider", async (t) => {
+  const aiProvider = {
+    name: "hanging-test-provider",
+    async explain({ signal }) {
+      await new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
+    }
+  };
+  const baseUrl = await withTestServer(t, {
+    aiProvider,
+    aiRequestTimeoutMs: 20
+  });
+  const upload = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "timeout.txt",
+      contentBase64: Buffer.from("Timeout context").toString("base64")
+    })
+  });
+  const document = await upload.json();
+
+  const response = await fetch(`${baseUrl}/api/ai/explain`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      mode: "direct",
+      selection: { text: "Timeout", blockIds: [1] }
+    })
+  });
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { error: "AI provider request timed out" });
 });

@@ -2,7 +2,7 @@
 
 ## 系统边界
 
-AI Deep Reader 是单进程、本地优先的 Web 应用。Express 同时提供静态前端和 JSON API；SQLite 保存结构化数据，原始上传文件保存在本地目录。应用没有账号系统，默认只适合可信的单机环境。
+文澈阅读是单进程、本地优先的 Web 应用。Express 同时提供静态前端和 JSON API；SQLite 保存结构化数据，原始上传文件保存在本地目录。应用没有账号系统，默认只监听 `127.0.0.1`，适合可信的单机环境。
 
 ## 组件
 
@@ -18,7 +18,7 @@ AI Deep Reader 是单进程、本地优先的 Web 应用。Express 同时提供�
 ## 主要数据流
 
 1. 浏览器把一个或多个文件编码为 Base64 JSON，提交到文档 API。
-2. 服务端校验扩展名，解析并清洗内容，把原文件写入 `uploads/`。
+2. 服务端校验扩展名、Base64、文件大小和二进制签名，解析并清洗内容，把使用随机文件名的原文件写入 `uploads/`。
 3. 文档元数据、标准化块和可选的保真 HTML 写入 `data/reader.sqlite`。
 4. 前端根据块分页；HTML 保真内容在无脚本 sandbox iframe 中显示。
 5. 划词解析时，服务端按模式提取附近上下文；无选区的自定义问题使用受长度限制的全文相关上下文。
@@ -40,6 +40,7 @@ AI Deep Reader 是单进程、本地优先的 Web 应用。Express 同时提供�
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `GET` | `/api/documents` | 文档列表 |
+| `GET` | `/api/health` | 服务状态、产品名和版本号 |
 | `POST` | `/api/documents` | 导入单个 Base64 文档 |
 | `POST` | `/api/documents/batch` | 批量导入，可附归档名 |
 | `GET` | `/api/documents/:id` | 文档块、保真 HTML 和 AI 历史 |
@@ -52,11 +53,14 @@ AI Deep Reader 是单进程、本地优先的 Web 应用。Express 同时提供�
 | `POST` | `/api/ai/explain` | 直接解析或深入解析 |
 | `POST` | `/api/ai/ask` | 自定义问题 |
 
-上传 API 的请求体使用 JSON，因此 Express 当前设置了 `120mb` 的总请求上限；这不是生产环境的用户配额。
+上传 API 使用 Base64 JSON。请求体上限为 `82mb`，业务层另行限制单文件 25 MB、单批最多 50 个文件、单批解码后合计 60 MB。
 
 ## 安全约束
 
 - HTML 导入会移除脚本、iframe、内联事件和危险 URL；保真布局仅在禁用脚本的 iframe 中运行。
+- PDF、DOCX 和 EPUB 会检查基础文件签名；DOCX 和 EPUB 还会限制 ZIP 条目数、解压大小和压缩率。
 - AI Markdown 必须经过 DOMPurify 后才能写入 `innerHTML`。
+- HTTP 响应设置 CSP、`nosniff`、拒绝嵌入和无来源引用等安全响应头。
+- AI 问题和选区有长度上限，避免异常请求无限扩大模型上下文。
 - `.env`、数据库、上传文件和日志不能进入 Git。
 - 云端 AI 请求会发送选区和相关上下文，产品化前需要明确的隐私授权和供应商政策。
