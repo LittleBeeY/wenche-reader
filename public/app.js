@@ -16,6 +16,8 @@ import { paginateBlocks } from "./pagination.js";
 import { findDocumentMatches } from "./documentSearch.js";
 import { formatAnswerMeta, getVisibleRecords } from "./historyView.js";
 import { renderMarkdown } from "./markdownView.js";
+import { consumeEventStream } from "./aiStream.js";
+import { resolveAnswerReferences } from "./answerReferences.js";
 import {
   calculateSelectionMenuPosition,
   dismissSelectionUi
@@ -57,6 +59,7 @@ const state = {
   docxScrollFrame: null,
   aiController: null,
   busy: false,
+  immersive: false,
   panels: loadPanelState(window.localStorage),
   readingSettings: loadReadingSettings(window.localStorage)
 };
@@ -120,6 +123,8 @@ const decreaseFontButton = document.querySelector("#decrease-font");
 const increaseFontButton = document.querySelector("#increase-font");
 const fontScaleOutput = document.querySelector("#font-scale");
 const resetReadingSettingsButton = document.querySelector("#reset-reading-settings");
+const immersiveToggleButton = document.querySelector("#immersive-toggle");
+const exitImmersiveButton = document.querySelector("#exit-immersive");
 
 documentSidebarToggle.addEventListener("click", () => {
   state.panels.leftCollapsed = !state.panels.leftCollapsed;
@@ -129,6 +134,12 @@ documentSidebarToggle.addEventListener("click", () => {
 aiPanelToggle.addEventListener("click", () => {
   state.panels.rightCollapsed = !state.panels.rightCollapsed;
   renderPanelState();
+});
+
+immersiveToggleButton.addEventListener("click", () => setImmersive(true));
+exitImmersiveButton.addEventListener("click", () => setImmersive(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.immersive) setImmersive(false);
 });
 
 fileInput.addEventListener("change", async (event) => {
@@ -292,6 +303,11 @@ knowledgeTab.addEventListener("click", async () => {
 });
 
 answerList.addEventListener("click", async (event) => {
+  const referenceButton = event.target.closest("button[data-answer-reference]");
+  if (referenceButton) {
+    await navigateToAnswerReference(referenceButton);
+    return;
+  }
   const button = event.target.closest("button[data-save-record]");
   if (!button) return;
   const record = state.document?.aiRecords?.find(
@@ -311,6 +327,11 @@ answerList.addEventListener("click", async (event) => {
 });
 
 knowledgeList.addEventListener("click", async (event) => {
+  const referenceButton = event.target.closest("button[data-answer-reference]");
+  if (referenceButton) {
+    await navigateToAnswerReference(referenceButton);
+    return;
+  }
   const actionButton = event.target.closest("button[data-knowledge-action]");
   if (!actionButton) return;
   const item = state.knowledgeItems.find(
@@ -468,13 +489,14 @@ function updateReadingSettings(changes) {
 }
 
 function applyReadingSettings() {
-  const { fontScale, contentWidth, lineHeight } = state.readingSettings;
+  const { fontScale, contentWidth, lineHeight, theme } = state.readingSettings;
   const widthMap = { narrow: "680px", standard: "820px", wide: "1080px" };
   const lineHeightMap = { compact: 1.55, comfortable: 1.9, relaxed: 2.15 };
 
   reader.style.setProperty("--reader-font-scale", String(fontScale / 100));
   reader.style.setProperty("--reader-content-width", widthMap[contentWidth]);
   reader.style.setProperty("--reader-line-height", String(lineHeightMap[lineHeight]));
+  document.documentElement.dataset.theme = theme;
   applyDocxReadingScale();
   applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
 
@@ -482,12 +504,13 @@ function applyReadingSettings() {
   decreaseFontButton.disabled = fontScale <= 80;
   increaseFontButton.disabled = fontScale >= 160;
   for (const control of readingSettingsPanel.querySelectorAll("[data-reading-control]")) {
-    const currentValue = state.readingSettings[control.dataset.readingControl];
+    const controlName = control.dataset.readingControl;
+    const currentValue = state.readingSettings[controlName];
     for (const button of control.querySelectorAll("button[data-value]")) {
       const active = button.dataset.value === currentValue;
       button.dataset.active = String(active);
       button.setAttribute("aria-pressed", String(active));
-      button.disabled = Boolean(state.docxPreview);
+      button.disabled = Boolean(state.docxPreview && controlName !== "theme");
     }
   }
   saveReadingSettings(window.localStorage, state.readingSettings);
@@ -518,9 +541,33 @@ function applyDocxReadingScale() {
 function applyReadingSettingsToFrame(frame) {
   const frameDocument = frame?.contentDocument;
   if (!frameDocument?.head || !frameDocument.body) return;
-  const { fontScale, contentWidth, lineHeight } = state.readingSettings;
+  const { fontScale, contentWidth, lineHeight, theme } = state.readingSettings;
   const widthMap = { narrow: 900, standard: 1200, wide: 1440 };
   const lineHeightMap = { compact: 1.55, comfortable: 1.9, relaxed: 2.15 };
+  const themeMap = {
+    light: {
+      background: "#ffffff",
+      color: "#18211e",
+      filter: "none",
+      mediaFilter: "none",
+      scheme: "light"
+    },
+    eye: {
+      background: "#faf7ed",
+      color: "#2c332e",
+      filter: "sepia(0.1) saturate(0.94) brightness(0.98)",
+      mediaFilter: "none",
+      scheme: "light"
+    },
+    night: {
+      background: "#f3f5f4",
+      color: "#18211e",
+      filter: "invert(0.86) hue-rotate(180deg) brightness(0.9)",
+      mediaFilter: "invert(1) hue-rotate(180deg)",
+      scheme: "dark"
+    }
+  };
+  const frameTheme = themeMap[theme] || themeMap.light;
   let style = frameDocument.querySelector("#wenche-reading-settings");
   if (!style) {
     style = frameDocument.createElement("style");
@@ -528,9 +575,16 @@ function applyReadingSettingsToFrame(frame) {
     frameDocument.head.append(style);
   }
   style.textContent = `
-    html { overflow-x: hidden !important; }
+    html {
+      background: ${frameTheme.background} !important;
+      color-scheme: ${frameTheme.scheme};
+      overflow-x: hidden !important;
+    }
     body {
+      background: ${frameTheme.background} !important;
+      color: ${frameTheme.color} !important;
       box-sizing: border-box !important;
+      filter: ${frameTheme.filter};
       line-height: ${lineHeightMap[lineHeight]} !important;
       margin-left: auto !important;
       margin-right: auto !important;
@@ -539,6 +593,7 @@ function applyReadingSettingsToFrame(frame) {
       zoom: 1;
     }
     img { height: auto; max-width: 100%; }
+    img, video, canvas, svg { filter: ${frameTheme.mediaFilter}; }
   `;
 
   const availableWidth = Math.max(320, frame.clientWidth - 16);
@@ -559,9 +614,24 @@ function applyReadingSettingsToFrame(frame) {
 }
 
 function expandAiPanel() {
+  if (state.immersive) setImmersive(false);
   if (!state.panels.rightCollapsed) return;
   state.panels.rightCollapsed = false;
   renderPanelState();
+}
+
+function setImmersive(immersive) {
+  state.immersive = Boolean(immersive);
+  appShell.classList.toggle("is-immersive", state.immersive);
+  immersiveToggleButton.setAttribute("aria-pressed", String(state.immersive));
+  immersiveToggleButton.title = state.immersive ? "退出沉浸阅读" : "进入沉浸阅读";
+  immersiveToggleButton.setAttribute("aria-label", immersiveToggleButton.title);
+  exitImmersiveButton.hidden = !state.immersive;
+  if (state.immersive) readingSettingsPanel.removeAttribute("open");
+  requestAnimationFrame(() => {
+    applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
+    applyDocxReadingScale();
+  });
 }
 
 function updatePanelToggle(button, options) {
@@ -694,11 +764,13 @@ async function loadDocument(id, targetPage = "saved") {
     readerSearchInput.value = "";
     updateSearchControls();
     renderDocumentHeader(payload);
-    const targetPageIndex = targetPage === "last"
-      ? state.pages.length - 1
-      : targetPage === "saved"
-        ? getSavedPageIndex(window.localStorage, payload.id)
-        : 0;
+    const targetPageIndex = Number.isInteger(targetPage)
+      ? targetPage
+      : targetPage === "last"
+        ? state.pages.length - 1
+        : targetPage === "saved"
+          ? getSavedPageIndex(window.localStorage, payload.id)
+          : 0;
     applyReadingSettings();
     showPage(targetPageIndex);
     renderHistory(payload.aiRecords || []);
@@ -727,15 +799,19 @@ async function runAi(mode, question = "") {
   state.aiController = controller;
   cancelAiButton.hidden = false;
   setBusy(true, "AI 正在解析");
+  const streamingAnswer = createStreamingAnswer(mode);
   try {
     const endpoint = mode === "custom" ? "/api/ai/ask" : "/api/ai/explain";
     const currentPage = state.pages[state.pageIndex];
     const selection = mode === "custom" && !state.selection.text && !state.selection.blockIds.length
-      ? { text: "", blockIds: currentPage?.blockIds || [] }
+      ? { text: "", blockIds: currentPage?.blockIds || [], pageIndex: state.pageIndex }
       : state.selection;
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        accept: "text/event-stream",
+        "content-type": "application/json"
+      },
       signal: controller.signal,
       body: JSON.stringify({
         documentId: state.document.id,
@@ -744,20 +820,62 @@ async function runAi(mode, question = "") {
         question
       })
     });
-    const payload = await readJson(response);
+    let answer = "";
+    await consumeEventStream(response, (event, payload) => {
+      if (event !== "delta") return;
+      answer += payload.delta;
+      updateStreamingAnswer(streamingAnswer, answer);
+    });
     questionInput.value = "";
     await refreshDocumentHistory();
     setStatus("");
   } catch (error) {
     if (error.name === "AbortError") {
       setStatus("已取消 AI 解析");
+      finishStreamingAnswer(streamingAnswer, "已取消", false);
     } else {
       setStatus(error.message, true);
+      finishStreamingAnswer(streamingAnswer, error.message, true);
     }
   } finally {
     if (state.aiController === controller) state.aiController = null;
     cancelAiButton.hidden = true;
     setBusy(false);
+  }
+}
+
+function createStreamingAnswer(mode) {
+  const item = document.createElement("section");
+  item.className = "answer-item is-streaming";
+  item.dataset.mode = mode;
+  const header = document.createElement("div");
+  header.className = "answer-item-header";
+  const title = document.createElement("strong");
+  title.textContent = `${modeLabel(mode)} · 正在生成`;
+  const signal = document.createElement("span");
+  signal.className = "streaming-signal";
+  signal.setAttribute("aria-label", "AI 正在生成回答");
+  header.append(title, signal);
+  const body = document.createElement("div");
+  body.className = "answer-body streaming-answer-body";
+  body.textContent = "正在连接模型…";
+  item.append(header, body);
+  answerList.prepend(item);
+  return { item, title, body, signal };
+}
+
+function updateStreamingAnswer(streamingAnswer, answer) {
+  streamingAnswer.body.innerHTML = renderMarkdown(answer);
+  streamingAnswer.body.scrollIntoView({ block: "nearest" });
+}
+
+function finishStreamingAnswer(streamingAnswer, message, isError) {
+  streamingAnswer.item.classList.remove("is-streaming");
+  streamingAnswer.item.classList.toggle("is-stream-error", isError);
+  streamingAnswer.signal.remove();
+  streamingAnswer.title.textContent = message;
+  if (!streamingAnswer.body.textContent.trim() || streamingAnswer.body.textContent === "正在连接模型…") {
+    streamingAnswer.body.textContent = message;
   }
 }
 
@@ -771,7 +889,8 @@ async function runAiForCurrentPage(mode) {
   const text = page.blocks.map((block) => block.text).join("\n\n").slice(0, 1200);
   state.selection = {
     text: text ? `当前页：${text}` : "当前页",
-    blockIds: page.blockIds
+    blockIds: page.blockIds,
+    pageIndex: state.pageIndex
   };
 
   await runAi(mode);
@@ -1625,8 +1744,62 @@ function createAnswerElement(record) {
   const meta = document.createElement("small");
   meta.textContent = formatAnswerMeta(record);
 
-  item.append(header, body, meta);
+  item.append(header, body, createAnswerReferences(record), meta);
   return item;
+}
+
+function createAnswerReferences(record) {
+  const isCurrentDocument = Number(record.documentId || state.document?.id) === Number(state.document?.id);
+  const references = resolveAnswerReferences(
+    record,
+    isCurrentDocument ? state.document?.blocks || [] : [],
+    isCurrentDocument ? state.pages : []
+  );
+  const group = document.createElement("div");
+  group.className = "answer-references";
+  if (references.length === 0) {
+    group.hidden = true;
+    return group;
+  }
+  const label = document.createElement("span");
+  label.textContent = "原文定位";
+  group.append(label);
+  for (const reference of references) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.answerReference = "";
+    button.dataset.documentId = record.documentId || state.document?.id || "";
+    button.dataset.pageIndex = String(reference.pageIndex);
+    button.dataset.blockId = reference.blockId ?? "";
+    button.dataset.selectedText = String(record.selectedText || "").slice(0, 160);
+    button.textContent = reference.label;
+    group.append(button);
+  }
+  return group;
+}
+
+async function navigateToAnswerReference(button) {
+  const documentId = Number(button.dataset.documentId);
+  const pageIndex = Math.max(0, Number(button.dataset.pageIndex) || 0);
+  const blockId = Number(button.dataset.blockId) || null;
+  if (!state.document || Number(state.document.id) !== documentId) {
+    await loadDocument(documentId, pageIndex);
+  } else {
+    showPage(pageIndex);
+  }
+  requestAnimationFrame(() => flashAnswerReference(blockId));
+}
+
+function flashAnswerReference(blockId) {
+  const target = blockId
+    ? reader.querySelector(`[data-block-id="${blockId}"]`)
+    : state.docxPreview
+      ? reader.querySelector("section.docx:not([hidden])")
+      : reader.querySelector(".reader-rich-frame") || reader;
+  if (!target) return;
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  target.classList.add("is-citation-target");
+  window.setTimeout(() => target.classList.remove("is-citation-target"), 1800);
 }
 
 function captureSelection() {
@@ -1650,7 +1823,7 @@ function captureSelection() {
 }
 
 function showSelectionMenu({ text, blockIds, rect }) {
-  state.selection = { text, blockIds };
+  state.selection = { text, blockIds, pageIndex: state.pageIndex };
   state.activeAnnotationId = null;
   selectionMenu.dataset.mode = "selection";
   positionSelectionMenu(rect);
@@ -1674,7 +1847,8 @@ function showAnnotationMenu(target, frame = null) {
   state.activeAnnotationId = annotationId;
   state.selection = {
     text: annotation.selectedText || "",
-    blockIds: annotation.blockIds || []
+    blockIds: annotation.blockIds || [],
+    pageIndex: annotation.pageIndex
   };
   selectionMenu.dataset.mode = "annotation";
   const removeButton = selectionMenu.querySelector("[data-action='remove-annotation']");
@@ -1926,6 +2100,7 @@ function createKnowledgeElement(record) {
   const answer = document.createElement("div");
   answer.className = "knowledge-answer answer-body";
   answer.innerHTML = renderMarkdown(record.answer);
+  const references = createAnswerReferences(record);
 
   const note = document.createElement("textarea");
   note.rows = 3;
@@ -1947,7 +2122,7 @@ function createKnowledgeElement(record) {
   remove.dataset.recordId = record.id;
   remove.textContent = "移出沉淀";
   actions.append(save, remove);
-  item.append(answer, note, actions);
+  item.append(answer, references, note, actions);
   return item;
 }
 

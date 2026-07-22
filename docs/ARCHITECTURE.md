@@ -8,12 +8,12 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `public/` | 阅读器、归档管理、分页、文内搜索、阅读排版设置、阅读标注、AI 历史与沉淀和侧栏状态 |
+| `public/` | 阅读器、归档管理、分页、文内搜索、主题与沉浸阅读、阅读标注、AI 流式回答、原文定位、历史与沉淀和侧栏状态 |
 | `public/docxPreview.js` | 从受控原文件接口读取 DOCX，调用 docx-preview 渲染版式，把正文块重新装入独立纸页，并生成页码和可搜索逐页文本 |
 | `src/server.js` | 静态资源、文档/归档/标注/AI/备份 API、上传文件生命周期 |
 | `src/lib/documentParser.js` | TXT、Markdown、HTML、PDF、DOCX、EPUB 解析和 HTML/CSS 清洗 |
 | `src/lib/storage.js` | SQLite 建表、迁移、事务和查询 |
-| `src/lib/aiProvider.js` | Mock 与 OpenAI-compatible provider、三种回答模式的提示词 |
+| `src/lib/aiProvider.js` | Mock 与 OpenAI-compatible provider、三种回答模式的提示词和流式响应解析 |
 | `src/lib/markdownExport.js` | 将阅读标注和已沉淀 AI 回答导出为 Markdown |
 | `src/lib/selectionContext.js` | 选区上下文和全文问题上下文裁剪 |
 | `e2e/` | Chrome、Edge、Firefox 隔离端到端测试和复杂 HTML 样本 |
@@ -24,9 +24,9 @@
 2. 服务端校验扩展名、Base64、文件大小和二进制签名，解析并清洗内容，把使用随机文件名的原文件写入 `uploads/`。
 3. 文档元数据、标准化块和可选的保真 HTML 写入 `data/reader.sqlite`。
 4. 普通文档由前端根据文本块分页；HTML 保真内容在无脚本 sandbox iframe 中显示并按阅读区自动适配宽度。DOCX 由浏览器读取受控原文件并通过 docx-preview 生成高保真版式，再以页脚位置为边界把顶层正文块装入独立纸页，复制页眉页脚并补齐动态页码；Mammoth 文本块继续用于 AI 上下文。
-5. 字号、内容宽度和行距保存在浏览器本地；普通阅读按相对字号整体缩放，DOCX 高保真模式统一缩放整个 Word 页面。
-6. 划词解析时，服务端按模式提取附近上下文；无选区的自定义问题使用受长度限制的全文相关上下文。
-7. Provider 返回 Markdown，服务端保存 AI 记录，前端使用 `marked` 转换并经 DOMPurify 清洗后展示。
+5. 字号、内容宽度、行距和明亮/护眼/夜间主题保存在浏览器本地；普通阅读按相对字号整体缩放，DOCX 高保真模式统一缩放整个 Word 页面。沉浸阅读只改变当前布局，不覆盖原侧栏状态。
+6. 划词解析时，服务端按模式提取附近上下文，并加入稳定的页码和段落标记；无选区的自定义问题使用受长度限制的全文相关上下文。
+7. 浏览器通过 `Accept: text/event-stream` 请求 AI，Provider 的增量内容以 SSE `delta` 事件返回；完整结束后服务端才保存记录并发送 `done`。前端对每次增量都使用 `marked` 转换并经 DOMPurify 清洗后展示，历史回答中的位置标记可映射到正文页或块。
 8. 高亮、批注、书签和 AI 回答沉淀写入 SQLite；前端原地更新高亮 DOM 并保持滚动位置，点击高亮可通过标注 API 删除；Markdown 导出只读取这些结构化记录。
 9. 备份导出把数据库快照和原始文件编码到一个 JSON 文件中，排除 `.env`；恢复时先写新文件，再用事务替换结构化数据。
 
@@ -67,6 +67,8 @@
 | `GET` | `/api/export/markdown` | 导出当前或全部阅读沉淀 |
 | `GET` | `/api/backup` | 下载完整本地数据备份，不含密钥 |
 | `POST` | `/api/backup/restore` | 用文澈备份替换当前本地数据 |
+
+`POST /api/ai/explain` 和 `POST /api/ai/ask` 默认仍兼容 JSON 响应；请求头包含 `Accept: text/event-stream` 时返回 `start`、`delta`、`done` 或 `error` 事件。
 
 上传 API 使用 Base64 JSON。JSON 请求体上限为 `220mb`；文档业务层另行限制单文件 25 MB、单批最多 50 个文件、单批解码后合计 60 MB，备份恢复中的原文件合计上限为 150 MB。
 

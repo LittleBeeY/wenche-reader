@@ -21,7 +21,7 @@ test("builds context around selected blocks in document order", () => {
 
   assert.equal(
     context,
-    "First block gives background.\n\nSecond block contains the core concept.\n\nThird block expands the argument."
+    "[第 1 段] First block gives background.\n\n[第 2 段] Second block contains the core concept.\n\n[第 3 段] Third block expands the argument."
   );
 });
 

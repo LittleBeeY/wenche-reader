@@ -88,6 +88,13 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   await page.locator("#selection-menu [data-action='direct']").click();
   const answer = page.locator(".answer-item").first();
   await expect(answer).toContainText("Important concept");
+  const paragraphReference = answer
+    .locator("[data-answer-reference]")
+    .filter({ hasText: "第 1 段" })
+    .first();
+  await expect(paragraphReference).toBeVisible();
+  await paragraphReference.click();
+  await expect(page.locator(".doc-block.is-citation-target")).toContainText("Important concept");
   await answer.locator("button[data-save-record]").click();
   await expect(answer.locator("button[data-save-record]")).toHaveText("已沉淀");
 
@@ -117,8 +124,10 @@ test("adjusts and persists the reading layout", async ({ page }) => {
   await page.locator("#increase-font").click();
   await page.locator("[data-reading-control='contentWidth'] [data-value='wide']").click();
   await page.locator("[data-reading-control='lineHeight'] [data-value='relaxed']").click();
+  await page.locator("[data-reading-control='theme'] [data-value='eye']").click();
 
   await expect(page.locator("#font-scale")).toHaveText("120%");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "eye");
   const lineHeight = await page.locator("#reader").evaluate(
     (element) => Number.parseFloat(getComputedStyle(element).lineHeight)
   );
@@ -136,6 +145,19 @@ test("adjusts and persists the reading layout", async ({ page }) => {
     .toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-reading-control='lineHeight'] [data-value='relaxed']"))
     .toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-reading-control='theme'] [data-value='eye']"))
+    .toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "eye");
+
+  await page.locator("#immersive-toggle").click();
+  await expect(page.locator("#app-shell")).toHaveClass(/is-immersive/);
+  await expect(page.locator("#document-sidebar")).toBeHidden();
+  await expect(page.locator("#ai-panel")).toBeHidden();
+  await expect(page.locator(".reader-toolbar")).toBeHidden();
+  await expect(page.locator("#exit-immersive")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#app-shell")).not.toHaveClass(/is-immersive/);
+  await expect(page.locator(".reader-toolbar")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("#reading-settings > summary").click();

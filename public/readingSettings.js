@@ -1,12 +1,14 @@
 export const DEFAULT_READING_SETTINGS = Object.freeze({
   fontScale: 100,
   contentWidth: "standard",
-  lineHeight: "comfortable"
+  lineHeight: "comfortable",
+  theme: "light"
 });
 
 const STORAGE_KEY = "ai-reader:reading-settings";
 const CONTENT_WIDTHS = new Set(["narrow", "standard", "wide"]);
 const LINE_HEIGHTS = new Set(["compact", "comfortable", "relaxed"]);
+const THEMES = new Set(["light", "eye", "night"]);
 
 export function normalizeReadingSettings(value = {}) {
   const numericScale = Number(value.fontScale);
@@ -21,7 +23,8 @@ export function normalizeReadingSettings(value = {}) {
       : DEFAULT_READING_SETTINGS.contentWidth,
     lineHeight: LINE_HEIGHTS.has(value.lineHeight)
       ? value.lineHeight
-      : DEFAULT_READING_SETTINGS.lineHeight
+      : DEFAULT_READING_SETTINGS.lineHeight,
+    theme: THEMES.has(value.theme) ? value.theme : DEFAULT_READING_SETTINGS.theme
   };
 }
 

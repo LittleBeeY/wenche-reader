@@ -686,7 +686,7 @@ async function handleAiRequest({
 
     const selectedText = normalizedSelection.text;
     const hasSelection = selectedText.trim() || normalizedSelection.blockIds?.length;
-    const context = mode === "custom" && !hasSelection
+    const rawContext = mode === "custom" && !hasSelection
       ? buildDocumentContext({
           blocks: document.blocks,
           question,
@@ -697,16 +697,39 @@ async function handleAiRequest({
           selection: normalizedSelection,
           radius: mode === "deep" ? 2 : 1
         });
-    const result = await aiProvider.explain({
+    const pageIndex = Number.isInteger(normalizedSelection.pageIndex) && normalizedSelection.pageIndex >= 0
+      ? normalizedSelection.pageIndex
+      : null;
+    const context = pageIndex === null
+      ? rawContext
+      : `[第 ${pageIndex + 1} 页]\n\n${rawContext}`;
+    const aiInput = {
       mode,
       selectedText,
       context,
       question,
       documentTitle: document.title,
       signal: controller.signal
-    });
+    };
+    const wantsStream = req.get("accept")?.includes("text/event-stream") &&
+      typeof aiProvider.streamExplain === "function";
+    let result;
+    if (wantsStream) {
+      res.status(200);
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+      writeSse(res, "start", { mode });
+      result = await aiProvider.streamExplain(aiInput, async (delta) => {
+        if (!res.destroyed) writeSse(res, "delta", { delta });
+      });
+    } else {
+      result = await aiProvider.explain(aiInput);
+    }
 
-    storage.addAiRecord({
+    const recordId = storage.addAiRecord({
       documentId: document.id,
       mode,
       question,
@@ -716,17 +739,33 @@ async function handleAiRequest({
       provider: result.provider
     });
 
-    return res.json(result);
+    if (wantsStream) {
+      writeSse(res, "done", { ...result, recordId });
+      return res.end();
+    }
+    return res.json({ ...result, recordId });
   } catch (error) {
     if (timedOut && !res.destroyed) {
+      if (res.headersSent) {
+        writeSse(res, "error", { error: "AI provider request timed out" });
+        return res.end();
+      }
       return res.status(504).json({ error: "AI provider request timed out" });
     }
     if (controller.signal.aborted || res.destroyed) return;
+    if (res.headersSent) {
+      writeSse(res, "error", { error: error.message });
+      return res.end();
+    }
     return res.status(500).json({ error: error.message });
   } finally {
     clearTimeout(timeoutId);
     res.off("close", abortProvider);
   }
+}
+
+function writeSse(res, event, payload) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
 
 function setSecurityHeaders(req, res, next) {

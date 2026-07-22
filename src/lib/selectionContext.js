@@ -20,7 +20,7 @@ export function buildSelectionContext({ blocks, selection, radius = 2 }) {
 
   return orderedBlocks
     .slice(start, end + 1)
-    .map((block) => block.text)
+    .map(formatBlock)
     .join("\n\n");
 }
 

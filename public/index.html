@@ -134,9 +134,18 @@
                     <button type="button" data-value="relaxed">宽松</button>
                   </div>
                 </fieldset>
+                <fieldset>
+                  <legend>阅读主题</legend>
+                  <div class="reading-segments theme-segments" data-reading-control="theme">
+                    <button type="button" data-value="light"><span class="theme-swatch theme-light" aria-hidden="true"></span>明亮</button>
+                    <button type="button" data-value="eye"><span class="theme-swatch theme-eye" aria-hidden="true"></span>护眼</button>
+                    <button type="button" data-value="night"><span class="theme-swatch theme-night" aria-hidden="true"></span>夜间</button>
+                  </div>
+                </fieldset>
                 <button id="reset-reading-settings" class="reading-reset" type="button">恢复默认</button>
               </div>
             </details>
+            <button id="immersive-toggle" class="icon-command immersive-command" type="button" title="进入沉浸阅读" aria-label="进入沉浸阅读" aria-pressed="false">⛶</button>
             <button id="bookmark-page" class="icon-command" type="button" title="收藏当前页" aria-label="收藏当前页" disabled>☆</button>
             <button id="prev-page" type="button">上一页</button>
             <span id="page-indicator">0 / 0</span>
@@ -217,6 +226,8 @@
         </div>
       </aside>
     </main>
+
+    <button id="exit-immersive" class="exit-immersive" type="button" title="退出沉浸阅读（Esc）" aria-label="退出沉浸阅读" hidden>×</button>
 
     <dialog id="annotation-dialog" class="annotation-dialog">
       <form method="dialog">

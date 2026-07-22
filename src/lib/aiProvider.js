@@ -33,7 +33,7 @@ export function buildExplainMessages({ mode, selectedText, context, question, do
     {
       role: "system",
       content:
-        "你是一个严谨的深度阅读助手。回答必须基于用户提供的原文和上下文，尽量引用原文依据；如果原文不足以支持结论，要明确说明。使用常用 Markdown 排版，但不要用 Markdown 代码围栏包裹整个回答。"
+        "你是一个严谨的深度阅读助手。回答必须基于用户提供的原文和上下文，尽量引用原文依据；如果原文不足以支持结论，要明确说明。上下文中的 [第 N 页] 和 [第 N 段] 是可定位的原文标记，请在相关判断或引文后保留对应标记，不得编造不存在的标记。使用常用 Markdown 排版，但不要用 Markdown 代码围栏包裹整个回答。"
     },
     {
       role: "user",
@@ -67,10 +67,19 @@ export function createAiProvider(config = {}) {
       };
     },
     async explain(input) {
+      const answer = buildMockAnswer(input);
       return {
         provider: "mock",
-        answer: buildMockAnswer(input)
+        answer
       };
+    },
+    async streamExplain(input, onDelta) {
+      const answer = buildMockAnswer(input);
+      for (const chunk of answer.match(/[\s\S]{1,24}/g) || []) {
+        if (input.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        await onDelta(chunk);
+      }
+      return { provider: "mock", answer };
     }
   };
 }
@@ -120,36 +129,88 @@ function createOpenAiCompatibleProvider(config) {
       };
     },
     async explain(input) {
-      if (!apiKey) {
-        throw new Error("AI_API_KEY is required for openai-compatible provider");
-      }
-
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        signal: input.signal,
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          model,
-          messages: buildExplainMessages(input),
-          temperature: 0.2,
-          max_tokens: 2000
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`AI provider failed: ${response.status} ${await response.text()}`);
-      }
-
-      const payload = await response.json();
-      return {
-        provider: "openai-compatible",
-        answer: payload.choices?.[0]?.message?.content?.trim() || "模型没有返回内容。"
-      };
+      return requestOpenAiCompletion({ apiKey, baseUrl, model, input });
+    },
+    async streamExplain(input, onDelta) {
+      return requestOpenAiCompletion({ apiKey, baseUrl, model, input, onDelta });
     }
   };
+}
+
+async function requestOpenAiCompletion({ apiKey, baseUrl, model, input, onDelta }) {
+  if (!apiKey) {
+    throw new Error("AI_API_KEY is required for openai-compatible provider");
+  }
+
+  const streaming = typeof onDelta === "function";
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    signal: input.signal,
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: buildExplainMessages(input),
+      temperature: 0.2,
+      max_tokens: 2000,
+      stream: streaming
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI provider failed: ${response.status} ${await response.text()}`);
+  }
+
+  if (!streaming) {
+    const payload = await response.json();
+    return {
+      provider: "openai-compatible",
+      answer: payload.choices?.[0]?.message?.content?.trim() || "模型没有返回内容。"
+    };
+  }
+
+  const answer = await readOpenAiStream(response, onDelta);
+  return {
+    provider: "openai-compatible",
+    answer: answer.trim() || "模型没有返回内容。"
+  };
+}
+
+export async function readOpenAiStream(response, onDelta) {
+  if (!response.body) throw new Error("AI provider returned an empty stream");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+
+  const processLine = async (line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return false;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === "[DONE]") return data === "[DONE]";
+    const payload = JSON.parse(data);
+    const delta = payload.choices?.[0]?.delta?.content || "";
+    if (delta) {
+      answer += delta;
+      await onDelta(delta);
+    }
+    return false;
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (await processLine(line)) return answer;
+    }
+    if (done) break;
+  }
+  if (buffer) await processLine(buffer);
+  return answer;
 }
 
 export function normalizeBaseUrl(value) {

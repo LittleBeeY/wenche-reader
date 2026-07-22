@@ -298,7 +298,7 @@ export class Storage {
       .prepare(`
         SELECT ai_records.id, ai_records.document_id AS documentId,
           documents.title AS documentTitle, ai_records.mode, ai_records.question,
-          ai_records.selected_text AS selectedText, ai_records.answer,
+          ai_records.selected_text AS selectedText, ai_records.context, ai_records.answer,
           ai_records.provider, ai_records.saved,
           ai_records.saved_title AS savedTitle, ai_records.saved_note AS savedNote,
           ai_records.saved_at AS savedAt, ai_records.created_at AS createdAt

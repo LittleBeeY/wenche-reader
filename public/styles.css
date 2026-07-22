@@ -22,6 +22,41 @@
     BlinkMacSystemFont, sans-serif;
 }
 
+:root[data-theme="eye"] {
+  color-scheme: light;
+  --paper: #e7e4d8;
+  --surface: #f8f5ea;
+  --surface-soft: #f1eee2;
+  --surface-muted: #ebe7d9;
+  --ink: #28302b;
+  --muted: #6c746e;
+  --line: #d8d3c4;
+  --line-strong: #c8c1ae;
+  --teal-soft: #e2eeea;
+  --amber-soft: #f7edd4;
+}
+
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --paper: #171c1a;
+  --surface: #202724;
+  --surface-soft: #252e2a;
+  --surface-muted: #2a342f;
+  --ink: #e2e9e5;
+  --muted: #9ba9a2;
+  --line: #35423c;
+  --line-strong: #46554e;
+  --teal: #3b9d89;
+  --teal-dark: #73c4b2;
+  --teal-soft: #203f37;
+  --amber: #dda84e;
+  --amber-soft: #493a21;
+  --rose: #e5899c;
+  --blue: #81a9db;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+  --shadow-soft: 0 5px 18px rgba(0, 0, 0, 0.2);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -90,6 +125,43 @@ select:focus-visible {
 
 .app-shell.is-right-collapsed {
   --right-panel-width: 52px;
+}
+
+.app-shell.is-immersive {
+  display: block;
+}
+
+.app-shell.is-immersive .sidebar,
+.app-shell.is-immersive .ai-panel,
+.app-shell.is-immersive .reader-toolbar {
+  display: none;
+}
+
+.app-shell.is-immersive .reader-shell {
+  height: 100vh;
+}
+
+.exit-immersive {
+  align-items: center;
+  background: rgba(24, 33, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  font-size: 22px;
+  height: 38px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0;
+  position: fixed;
+  right: 18px;
+  top: 16px;
+  width: 38px;
+  z-index: 30;
+}
+
+.exit-immersive[hidden] {
+  display: none;
 }
 
 .sidebar,
@@ -849,6 +921,34 @@ select:focus-visible {
   color: var(--teal-dark);
 }
 
+.theme-segments button {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.theme-swatch {
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  display: inline-block;
+  height: 10px;
+  width: 10px;
+}
+
+.theme-light {
+  background: #ffffff;
+}
+
+.theme-eye {
+  background: #ede6ce;
+}
+
+.theme-night {
+  background: #28312d;
+}
+
 .reading-reset {
   background: transparent;
   border: 1px solid var(--line-strong);
@@ -892,6 +992,59 @@ select:focus-visible {
   background: #e7ece9;
   max-width: none;
   padding: 28px;
+}
+
+:root[data-theme="eye"] .reader-toolbar,
+:root[data-theme="eye"] .reader,
+:root[data-theme="eye"] .reader-rich-frame {
+  background: var(--surface);
+}
+
+:root[data-theme="eye"] .reader.has-docx-preview {
+  background: #deddd5;
+}
+
+:root[data-theme="night"] .reader-toolbar,
+:root[data-theme="night"] .reader-search input,
+:root[data-theme="night"] .page-controls > button,
+:root[data-theme="night"] .reading-settings > summary,
+:root[data-theme="night"] .reading-settings-popover,
+:root[data-theme="night"] textarea,
+:root[data-theme="night"] input,
+:root[data-theme="night"] select {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+:root[data-theme="night"] .reader {
+  background: #1c221f;
+}
+
+:root[data-theme="night"] .reader.has-docx-preview {
+  background: #151a18;
+}
+
+:root[data-theme="night"] .doc-table th,
+:root[data-theme="night"] .doc-code pre {
+  background: var(--surface-muted);
+}
+
+:root[data-theme="night"] .doc-quote blockquote {
+  color: #c2ccc7;
+}
+
+:root[data-theme="night"] .answer-body pre,
+:root[data-theme="night"] .answer-body code {
+  background: #171c1a;
+}
+
+:root[data-theme="night"] .answer-body h1,
+:root[data-theme="night"] .answer-body h2,
+:root[data-theme="night"] .answer-body h3,
+:root[data-theme="night"] .answer-body h4,
+:root[data-theme="night"] .answer-body h5,
+:root[data-theme="night"] .answer-body h6 {
+  color: var(--ink);
 }
 
 .docx-preview-host {
@@ -1299,6 +1452,22 @@ select:focus-visible {
   border-left-color: var(--amber);
 }
 
+.answer-item.is-streaming {
+  box-shadow: 0 8px 24px rgba(20, 122, 104, 0.12);
+}
+
+.answer-item.is-stream-error {
+  border-left-color: var(--rose);
+}
+
+.streaming-signal {
+  animation: streaming-pulse 900ms ease-in-out infinite alternate;
+  background: var(--teal);
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
 .answer-item strong {
   display: block;
   font-size: 14px;
@@ -1407,6 +1576,57 @@ select:focus-visible {
 
 .answer-body a {
   color: var(--teal-dark);
+}
+
+.answer-references {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.answer-references[hidden] {
+  display: none;
+}
+
+.answer-references > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.answer-references button {
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  color: var(--teal-dark);
+  font-size: 11px;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.answer-references button:hover {
+  background: var(--teal-soft);
+}
+
+.is-citation-target {
+  outline: 3px solid rgba(182, 119, 24, 0.56);
+  outline-offset: 5px;
+  transition: outline-color 500ms ease;
+}
+
+@keyframes streaming-pulse {
+  from { opacity: 0.35; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-signal {
+    animation: none;
+  }
 }
 
 .answer-item small {

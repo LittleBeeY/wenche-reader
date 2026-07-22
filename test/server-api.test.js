@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createApp } from "../src/server.js";
+import { consumeEventStream } from "../public/aiStream.js";
 
 async function withTestServer(t, options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "ai-reader-"));
@@ -564,6 +565,46 @@ test("explains a selection and persists ai history", async (t) => {
   const document = await documentResponse.json();
   assert.equal(document.aiRecords.length, 1);
   assert.equal(document.aiRecords[0].mode, "deep");
+});
+
+test("streams an AI answer and persists page-aware source context", async (t) => {
+  const baseUrl = await withTestServer(t);
+  const upload = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "stream.txt",
+      contentBase64: Buffer.from("First source.\n\nSecond source.").toString("base64")
+    })
+  });
+  const document = await upload.json();
+  const response = await fetch(`${baseUrl}/api/ai/explain`, {
+    method: "POST",
+    headers: {
+      accept: "text/event-stream",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      documentId: document.id,
+      mode: "direct",
+      selection: {
+        text: "Second source",
+        blockIds: [document.blocks[1].id],
+        pageIndex: 2
+      }
+    })
+  });
+  const deltas = [];
+  const completed = await consumeEventStream(response, (event, payload) => {
+    if (event === "delta") deltas.push(payload.delta);
+  });
+
+  assert.ok(deltas.length > 1);
+  assert.match(completed.answer, /Second source/);
+  assert.ok(Number.isInteger(completed.recordId));
+  const refreshed = await (await fetch(`${baseUrl}/api/documents/${document.id}`)).json();
+  assert.match(refreshed.aiRecords[0].context, /\[第 3 页\]/);
+  assert.match(refreshed.aiRecords[0].context, /\[第 2 段\]/);
 });
 
 test("explains the current page when block ids are provided without a text selection", async (t) => {

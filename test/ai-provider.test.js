@@ -16,6 +16,7 @@ test("builds deep explain prompt with selection, context, and grounded answer ru
   assert.match(promptText, /modern technical organizations/);
   assert.match(promptText, /深入解析/);
   assert.match(promptText, /引用原文/);
+  assert.match(promptText, /\[第 N 页\]/);
 });
 
 test("direct and deep prompts ask for clearly different answer shapes", () => {
@@ -102,4 +103,41 @@ test("calls an OpenAI-compatible provider with bounded output", async (t) => {
   assert.equal(requestBody.model, "deepseek-v4-flash");
   assert.equal(requestBody.max_tokens, 2000);
   assert.equal(requestBody.temperature, 0.2);
+  assert.equal(requestBody.stream, false);
+});
+
+test("streams an OpenAI-compatible answer delta by delta", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let requestBody;
+  globalThis.fetch = async (url, options) => {
+    requestBody = JSON.parse(options.body);
+    return new Response([
+      'data: {"choices":[{"delta":{"content":"流式"}}]}',
+      'data: {"choices":[{"delta":{"content":"回答"}}]}',
+      'data: [DONE]',
+      ""
+    ].join("\n\n"), { headers: { "content-type": "text/event-stream" } });
+  };
+
+  const provider = createAiProvider({
+    provider: "openai-compatible",
+    apiKey: "test-key",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-test"
+  });
+  const deltas = [];
+  const result = await provider.streamExplain({
+    mode: "direct",
+    selectedText: "原文",
+    context: "[第 1 段] 原文",
+    question: "",
+    documentTitle: "文章"
+  }, (delta) => deltas.push(delta));
+
+  assert.equal(requestBody.stream, true);
+  assert.deepEqual(deltas, ["流式", "回答"]);
+  assert.equal(result.answer, "流式回答");
 });
