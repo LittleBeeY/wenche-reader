@@ -69,10 +69,21 @@ select:focus-visible {
 }
 
 .app-shell {
+  --left-panel-width: 292px;
+  --right-panel-width: 392px;
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr) 392px;
+  grid-template-columns: var(--left-panel-width) minmax(0, 1fr) var(--right-panel-width);
   height: 100vh;
   min-height: 0;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.is-left-collapsed {
+  --left-panel-width: 52px;
+}
+
+.app-shell.is-right-collapsed {
+  --right-panel-width: 52px;
 }
 
 .sidebar,
@@ -107,6 +118,55 @@ select:focus-visible {
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.aside-toggle {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  display: inline-flex;
+  flex: 0 0 34px;
+  font-size: 24px;
+  font-weight: 500;
+  height: 34px;
+  justify-content: center;
+  margin-left: auto;
+  min-height: 34px;
+  padding: 0;
+  width: 34px;
+}
+
+.aside-toggle:hover {
+  background: var(--teal-soft);
+  border-color: #9bc5bd;
+  color: var(--teal-dark);
+}
+
+.app-shell.is-left-collapsed .sidebar,
+.app-shell.is-right-collapsed .ai-panel {
+  overflow: hidden;
+  padding: 10px 8px;
+}
+
+.app-shell.is-left-collapsed .sidebar > :not(.brand),
+.app-shell.is-left-collapsed .brand > :not(.aside-toggle),
+.app-shell.is-right-collapsed .ai-panel > :not(.ai-header),
+.app-shell.is-right-collapsed .ai-header > :not(.aside-toggle) {
+  display: none;
+}
+
+.app-shell.is-left-collapsed .brand,
+.app-shell.is-right-collapsed .ai-header {
+  border: 0;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+}
+
+.app-shell.is-left-collapsed .aside-toggle,
+.app-shell.is-right-collapsed .aside-toggle {
+  margin-left: 0;
 }
 
 .brand-mark {
@@ -767,7 +827,10 @@ select:focus-visible {
 }
 
 .ai-header {
+  align-items: center;
   border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
   padding-bottom: 12px;
 }
 
@@ -952,7 +1015,8 @@ select:focus-visible {
   }
 
   .app-shell {
-    grid-template-columns: 252px minmax(0, 1fr);
+    --left-panel-width: 252px;
+    grid-template-columns: var(--left-panel-width) minmax(0, 1fr);
     height: auto;
   }
 
@@ -967,6 +1031,11 @@ select:focus-visible {
     height: auto;
     min-height: 520px;
     overflow: visible;
+  }
+
+  .app-shell.is-right-collapsed .ai-panel {
+    height: 52px;
+    min-height: 52px;
   }
 
   .answer-list {
@@ -998,6 +1067,12 @@ select:focus-visible {
 
   .sidebar {
     max-height: 52vh;
+  }
+
+  .app-shell.is-left-collapsed .sidebar {
+    height: 52px;
+    max-height: 52px;
+    min-height: 52px;
   }
 
   .reader-shell {
@@ -1038,6 +1113,11 @@ select:focus-visible {
 
   .ai-panel {
     min-height: 78vh;
+  }
+
+  .app-shell.is-right-collapsed .ai-panel {
+    height: 52px;
+    min-height: 52px;
   }
 
   .quick-actions {

@@ -7,14 +7,23 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="sidebar">
+    <main class="app-shell" id="app-shell">
+      <aside class="sidebar" id="document-sidebar">
         <div class="brand">
           <div class="brand-mark">AI</div>
           <div>
             <h1>深度阅读</h1>
             <p>Document Reader</p>
           </div>
+          <button
+            id="toggle-document-sidebar"
+            class="aside-toggle"
+            type="button"
+            title="收起文档栏"
+            aria-label="收起文档栏"
+            aria-controls="document-sidebar"
+            aria-expanded="true"
+          ><span aria-hidden="true">‹</span></button>
         </div>
 
         <label class="upload-zone" for="file-input">
@@ -103,10 +112,21 @@
         </div>
       </section>
 
-      <aside class="ai-panel">
+      <aside class="ai-panel" id="ai-panel">
         <div class="ai-header">
-          <span class="section-label">AI</span>
-          <h2>解析面板</h2>
+          <div class="ai-header-copy">
+            <span class="section-label">AI</span>
+            <h2>解析面板</h2>
+          </div>
+          <button
+            id="toggle-ai-panel"
+            class="aside-toggle"
+            type="button"
+            title="收起 AI 面板"
+            aria-label="收起 AI 面板"
+            aria-controls="ai-panel"
+            aria-expanded="true"
+          ><span aria-hidden="true">›</span></button>
         </div>
 
         <div id="ai-status" class="ai-status">正在检查 AI 接口</div>

@@ -20,6 +20,7 @@ import {
   calculateSelectionMenuPosition,
   dismissSelectionUi
 } from "./selectionUi.js";
+import { loadPanelState, savePanelState } from "./panelState.js";
 
 const state = {
   document: null,
@@ -37,9 +38,13 @@ const state = {
   searchMatchIndex: -1,
   showAllHistory: false,
   aiController: null,
-  busy: false
+  busy: false,
+  panels: loadPanelState(window.localStorage)
 };
 
+const appShell = document.querySelector("#app-shell");
+const documentSidebarToggle = document.querySelector("#toggle-document-sidebar");
+const aiPanelToggle = document.querySelector("#toggle-ai-panel");
 const fileInput = document.querySelector("#file-input");
 const categoryInput = document.querySelector("#category-input");
 const documentSort = document.querySelector("#document-sort");
@@ -77,6 +82,16 @@ const matchIndicator = document.querySelector("#match-indicator");
 const cancelAiButton = document.querySelector("#cancel-ai");
 const historyToggleButton = document.querySelector("#history-toggle");
 
+documentSidebarToggle.addEventListener("click", () => {
+  state.panels.leftCollapsed = !state.panels.leftCollapsed;
+  renderPanelState();
+});
+
+aiPanelToggle.addEventListener("click", () => {
+  state.panels.rightCollapsed = !state.panels.rightCollapsed;
+  renderPanelState();
+});
+
 fileInput.addEventListener("change", async (event) => {
   const files = [...(event.target.files || [])];
   if (files.length === 0) return;
@@ -102,6 +117,7 @@ selectionMenu.addEventListener("click", async (event) => {
   const action = event.target?.dataset?.action;
   if (!action) return;
   selectionMenu.hidden = true;
+  expandAiPanel();
 
   if (action === "custom") {
     questionInput.focus();
@@ -226,6 +242,7 @@ nextPageButton.addEventListener("click", async () => {
   if (nextDocument) await loadDocument(nextDocument.id, "first");
 });
 
+renderPanelState();
 await loadAiStatus();
 await loadDocumentList();
 const lastDocumentId = getLastDocumentId(window.localStorage);
@@ -234,6 +251,44 @@ if (state.documents.some((document) => Number(document.id) === lastDocumentId)) 
 }
 updatePaginationControls();
 updateSearchControls();
+
+function renderPanelState() {
+  const { leftCollapsed, rightCollapsed } = state.panels;
+  appShell.classList.toggle("is-left-collapsed", leftCollapsed);
+  appShell.classList.toggle("is-right-collapsed", rightCollapsed);
+
+  updatePanelToggle(documentSidebarToggle, {
+    collapsed: leftCollapsed,
+    collapseLabel: "收起文档栏",
+    expandLabel: "展开文档栏",
+    collapseIcon: "‹",
+    expandIcon: "›"
+  });
+  updatePanelToggle(aiPanelToggle, {
+    collapsed: rightCollapsed,
+    collapseLabel: "收起 AI 面板",
+    expandLabel: "展开 AI 面板",
+    collapseIcon: "›",
+    expandIcon: "‹"
+  });
+  savePanelState(window.localStorage, state.panels);
+}
+
+function expandAiPanel() {
+  if (!state.panels.rightCollapsed) return;
+  state.panels.rightCollapsed = false;
+  renderPanelState();
+}
+
+function updatePanelToggle(button, options) {
+  const label = options.collapsed ? options.expandLabel : options.collapseLabel;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-expanded", String(!options.collapsed));
+  button.querySelector("span").textContent = options.collapsed
+    ? options.expandIcon
+    : options.collapseIcon;
+}
 
 async function loadAiStatus() {
   try {
