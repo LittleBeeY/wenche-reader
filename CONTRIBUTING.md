@@ -18,24 +18,6 @@ npm.cmd run dev
 npm.cmd run release:check
 ```
 
-## GitHub 发布流程
-
-推荐使用 [GitHub CLI](https://cli.github.com/) 完成登录、推送和 Pull Request 创建。首次使用时运行：
-
-```powershell
-gh auth login --git-protocol ssh --web
-gh auth status
-```
-
-创建独立分支并完成提交后，可以用下面两条命令完成发布：
-
-```powershell
-git push -u origin <branch-name>
-gh pr create --draft --fill
-```
-
-如果终端提示找不到 `gh`，请先安装 GitHub CLI，再重新打开终端或开发工具，使新的用户 `PATH` 生效。
-
 ## 代码要求
 
 - 新文件格式统一通过 `src/lib/documentParser.js` 接入，并补解析与恶意输入测试。
