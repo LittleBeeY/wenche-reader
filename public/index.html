@@ -27,71 +27,92 @@
           ><span aria-hidden="true">‹</span></button>
         </div>
 
+        <div class="library-source-switch" role="tablist" aria-label="内容来源">
+          <button type="button" role="tab" aria-selected="true" data-active="true">本地文章</button>
+          <button type="button" role="tab" aria-selected="false" title="RSS 阅读将在后续版本加入" disabled>RSS</button>
+        </div>
+
         <label class="upload-zone" for="file-input">
           <input id="file-input" type="file" accept=".txt,.md,.markdown,.html,.htm,.pdf,.docx,.epub" multiple />
           <span class="upload-icon" aria-hidden="true">+</span>
-          <span class="upload-title">批量上传文章</span>
+          <span class="upload-title">导入文章</span>
           <span class="upload-types">TXT MD HTML PDF DOCX EPUB</span>
         </label>
 
-        <div class="import-options">
-          <label>
-            <span>分类</span>
-            <input id="category-input" type="text" list="category-options" maxlength="80" placeholder="例如：第一章" />
-          </label>
-          <label>
-            <span>排序</span>
-            <select id="document-sort">
-              <option value="filename">文件名</option>
-              <option value="title">文章标题</option>
-              <option value="import">导入顺序</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="document-meta">
-          <span class="meta-label">当前文档</span>
-          <strong id="document-title">未选择</strong>
-        </div>
+        <details class="sidebar-disclosure import-disclosure">
+          <summary>
+            <span>导入选项</span>
+            <small>可指定初始分类</small>
+          </summary>
+          <div class="sidebar-disclosure-body import-options">
+            <label>
+              <span>导入到分类</span>
+              <input id="category-input" type="text" list="category-options" maxlength="80" placeholder="例如：待读论文" />
+            </label>
+            <datalist id="category-options"></datalist>
+          </div>
+        </details>
 
         <nav class="document-list" aria-label="文档列表">
           <div class="document-list-toolbar">
-            <span class="meta-label">文档列表</span>
+            <div>
+              <span class="meta-label">文章库</span>
+              <strong id="document-title">未选择</strong>
+            </div>
+            <label class="document-sort-control">
+              <span>排序</span>
+              <select id="document-sort" aria-label="文章排序">
+                <option value="filename">文件名</option>
+                <option value="title">文章标题</option>
+                <option value="import">导入顺序</option>
+              </select>
+            </label>
+          </div>
+          <input id="document-search" class="document-search" type="search" placeholder="搜索标题、文件名或分类" aria-label="搜索文档" />
+          <div id="archive-list" class="archive-list" aria-label="归档位置"></div>
+          <div id="document-list"></div>
+        </nav>
+
+        <details id="library-organize" class="sidebar-disclosure organize-disclosure">
+          <summary>
+            <span>整理与归档</span>
+            <small>批量选择、移动和维护归档</small>
+          </summary>
+          <div class="sidebar-disclosure-body">
             <div class="document-list-actions">
               <button id="select-visible" type="button" disabled>全选结果</button>
               <button id="delete-selected" type="button" disabled>删除所选</button>
             </div>
+            <div class="batch-archive-controls">
+              <select id="archive-category" aria-label="选择归档">
+                <option value="">选择归档</option>
+                <option value="未分类">未分类</option>
+              </select>
+              <button id="archive-selected" type="button" disabled>放入归档</button>
+            </div>
+            <div class="archive-create-controls">
+              <input id="new-archive-name" type="text" maxlength="80" placeholder="新归档名称" aria-label="新归档名称" />
+              <button id="create-archive" type="button" disabled>新建</button>
+            </div>
+            <div class="archive-manage-actions">
+              <button id="rename-archive" type="button" disabled>重命名</button>
+              <button id="delete-archive" type="button" disabled>删除归档</button>
+            </div>
+            <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
           </div>
-          <input id="document-search" class="document-search" type="search" placeholder="搜索文档、文件名或分类" aria-label="搜索文档" />
-          <div class="archive-create-controls">
-            <input id="new-archive-name" type="text" maxlength="80" placeholder="新归档名称" aria-label="新归档名称" />
-            <button id="create-archive" type="button" disabled>新建</button>
-          </div>
-          <div id="archive-list" class="archive-list" aria-label="归档位置"></div>
-          <div class="batch-archive-controls">
-            <select id="archive-category" aria-label="选择归档">
-              <option value="">选择归档</option>
-              <option value="未分类">未分类</option>
-            </select>
-            <datalist id="category-options"></datalist>
-            <button id="archive-selected" type="button" disabled>放入归档</button>
-          </div>
-          <div class="archive-manage-actions">
-            <button id="rename-archive" type="button" disabled>重命名</button>
-            <button id="delete-archive" type="button" disabled>删除归档</button>
-          </div>
-          <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
-          <div id="document-list"></div>
-        </nav>
+        </details>
 
-        <div class="data-tools" aria-label="本地数据">
-          <span class="meta-label">本地数据</span>
-          <div>
+        <details class="sidebar-disclosure data-tools" aria-label="本地数据">
+          <summary>
+            <span>数据与备份</span>
+            <small>导出或恢复本地资料库</small>
+          </summary>
+          <div class="sidebar-disclosure-body">
             <button id="download-backup" type="button">备份</button>
             <label class="restore-button" for="restore-backup">恢复</label>
             <input id="restore-backup" type="file" accept="application/json,.json" />
           </div>
-        </div>
+        </details>
       </aside>
 
       <section class="reader-shell">

@@ -65,6 +65,7 @@ const state = {
 };
 
 const appShell = document.querySelector("#app-shell");
+const documentSidebar = document.querySelector("#document-sidebar");
 const documentSidebarToggle = document.querySelector("#toggle-document-sidebar");
 const aiPanelToggle = document.querySelector("#toggle-ai-panel");
 const fileInput = document.querySelector("#file-input");
@@ -86,6 +87,7 @@ const createArchiveButton = document.querySelector("#create-archive");
 const archiveList = document.querySelector("#archive-list");
 const renameArchiveButton = document.querySelector("#rename-archive");
 const deleteArchiveButton = document.querySelector("#delete-archive");
+const libraryOrganize = document.querySelector("#library-organize");
 const statusEl = document.querySelector("#status");
 const selectionMenu = document.querySelector("#selection-menu");
 const questionInput = document.querySelector("#question-input");
@@ -134,6 +136,15 @@ documentSidebarToggle.addEventListener("click", () => {
 aiPanelToggle.addEventListener("click", () => {
   state.panels.rightCollapsed = !state.panels.rightCollapsed;
   renderPanelState();
+});
+
+libraryOrganize.addEventListener("toggle", () => {
+  documentSidebar.classList.toggle("is-organizing", libraryOrganize.open);
+  if (!libraryOrganize.open && state.selectedDocumentIds.size > 0) {
+    state.selectedDocumentIds.clear();
+    renderDocumentList();
+  }
+  updateSelectionActions();
 });
 
 immersiveToggleButton.addEventListener("click", () => setImmersive(true));

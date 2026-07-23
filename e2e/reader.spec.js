@@ -20,6 +20,17 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   );
 
   await expect(page.locator("#reader-title")).toHaveText("复杂 HTML 测试文章");
+  await expect(page.locator(".library-source-switch [role='tab']").first())
+    .toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".library-source-switch [role='tab']").last()).toBeDisabled();
+  await expect(page.locator("#library-organize")).toHaveJSProperty("open", false);
+  await expect(page.locator(".document-select").first()).toBeHidden();
+  await page.locator("#library-organize > summary").click();
+  await expect(page.locator(".document-select").first()).toBeVisible();
+  await expect(page.locator(".document-list-actions")).toBeVisible();
+  await page.locator("#library-organize > summary").click();
+  await expect(page.locator(".document-select").first()).toBeHidden();
+
   const frame = page.frameLocator(".reader-rich-frame");
   await expect(frame.locator("table")).toBeVisible();
   await expect(frame.locator("strong")).toHaveText("行内强调");
