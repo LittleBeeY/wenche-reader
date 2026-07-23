@@ -104,6 +104,7 @@ npm.cmd run release:check
 - [架构与 API](docs/ARCHITECTURE.md)
 - [运行、备份与排障](docs/RUNBOOK.md)
 - [文档索引](docs/README.md)
+- [RSS 资讯与 AI 阅读生态详细设计](docs/RSS_DESIGN.md)
 - [安全问题报告](SECURITY.md)
 - [参与贡献](CONTRIBUTING.md)
 - [版本记录](CHANGELOG.md)
