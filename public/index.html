@@ -28,12 +28,39 @@
         </div>
 
         <div class="library-source-switch" role="tablist" aria-label="内容来源">
-          <button type="button" role="tab" aria-selected="true" data-active="true">本地文档</button>
-          <button type="button" role="tab" aria-selected="false" title="RSS 订阅将在后续版本加入" disabled>RSS 订阅</button>
+          <button id="source-local" type="button" role="tab" aria-selected="true" data-active="true">本地文档</button>
+          <button id="source-rss" type="button" role="tab" aria-selected="false">资讯</button>
         </div>
 
+        <nav id="rss-nav" class="rss-nav" aria-label="资讯导航" hidden>
+          <div class="rss-nav-section">
+            <span class="rss-nav-heading">资讯</span>
+            <button type="button" data-rss-scope="today" class="rss-nav-item">今日精选</button>
+            <button type="button" data-rss-scope="inbox" class="rss-nav-item">收件箱</button>
+            <button type="button" data-rss-scope="later" class="rss-nav-item">稍后读</button>
+            <button type="button" data-rss-scope="starred" class="rss-nav-item">收藏</button>
+          </div>
+          <div class="rss-nav-section">
+            <div class="rss-nav-heading-row">
+              <span class="rss-nav-heading">订阅</span>
+              <button id="rss-nav-add" type="button" class="rss-nav-mini" title="添加订阅" aria-label="添加订阅">＋</button>
+            </div>
+            <div id="rss-feed-tree" class="rss-feed-tree"></div>
+          </div>
+          <div class="rss-nav-section">
+            <span class="rss-nav-heading">管理</span>
+            <button id="rss-nav-manage" type="button" class="rss-nav-item">管理订阅源</button>
+            <button id="rss-nav-opml" type="button" class="rss-nav-item">导入 / 导出 OPML</button>
+          </div>
+          <div class="rss-nav-footer">
+            <span id="rss-last-updated" class="rss-last-updated" title="上次更新时间"></span>
+            <button id="rss-refresh-all" type="button" class="rss-nav-mini" title="立即刷新" aria-label="立即刷新">⟳ 刷新</button>
+            <button id="rss-open-prefs" type="button" class="rss-nav-mini" title="资讯设置" aria-label="资讯设置">⚙ 设置</button>
+          </div>
+        </nav>
+
         <label
-          class="upload-zone"
+          class="upload-zone local-only"
           for="file-input"
           title="支持批量添加 TXT、Markdown、HTML、PDF、DOCX 和 EPUB"
         >
@@ -43,7 +70,7 @@
           <span class="upload-types">可一次选择多个文件</span>
         </label>
 
-        <details class="sidebar-disclosure import-disclosure">
+        <details class="sidebar-disclosure import-disclosure local-only">
           <summary>
             <span>导入位置（可选）</span>
           </summary>
@@ -56,7 +83,7 @@
           </div>
         </details>
 
-        <nav class="document-list" aria-label="文档列表">
+        <nav class="document-list local-only" aria-label="文档列表">
           <div class="document-list-toolbar">
             <span class="document-list-title">文档列表</span>
             <label class="document-sort-control">
@@ -73,7 +100,7 @@
           <div id="document-list"></div>
         </nav>
 
-        <details id="library-organize" class="sidebar-disclosure organize-disclosure">
+        <details id="library-organize" class="sidebar-disclosure organize-disclosure local-only">
           <summary>
             <span>管理文档</span>
           </summary>
@@ -104,7 +131,7 @@
           </div>
         </details>
 
-        <details class="sidebar-disclosure data-tools" aria-label="本地数据">
+        <details class="sidebar-disclosure data-tools local-only" aria-label="本地数据">
           <summary>
             <span>备份与恢复</span>
           </summary>
@@ -116,7 +143,52 @@
         </details>
       </aside>
 
+      <section id="rss-list-panel" class="rss-list-panel" aria-label="资讯列表" hidden>
+        <div class="rss-list-toolbar">
+          <div class="rss-list-title-row">
+            <button id="rss-list-back" type="button" class="rss-list-back" title="返回资讯列表" aria-label="返回资讯列表">‹</button>
+            <h2 id="rss-scope-title">今日精选</h2>
+            <button id="rss-list-refresh" type="button" title="刷新" aria-label="刷新">⟳</button>
+          </div>
+          <input id="rss-list-search" type="search" placeholder="搜索资讯" aria-label="搜索资讯" />
+          <div class="rss-list-controls">
+            <div class="rss-segments" role="group" aria-label="阅读状态筛选" id="rss-read-filter">
+              <button type="button" data-value="unread">未读</button>
+              <button type="button" data-value="all">全部</button>
+              <button type="button" data-value="read">已读</button>
+            </div>
+            <div class="rss-segments" role="group" aria-label="排序方式" id="rss-sort-control">
+              <button type="button" data-value="smart">智能</button>
+              <button type="button" data-value="newest">最新</button>
+              <button type="button" data-value="oldest">最旧</button>
+            </div>
+            <div class="rss-segments" role="group" aria-label="列表视图" id="rss-view-control">
+              <button type="button" data-value="compact" title="紧凑视图" aria-label="紧凑视图">☰</button>
+              <button type="button" data-value="summary" title="摘要视图" aria-label="摘要视图">☷</button>
+              <button type="button" data-value="cards" title="卡片视图" aria-label="卡片视图">▦</button>
+            </div>
+          </div>
+        </div>
+        <div id="rss-brief-banner" class="rss-brief-banner" hidden></div>
+        <div id="rss-entry-list" class="rss-entry-list" tabindex="0" aria-label="资讯条目"></div>
+        <div class="rss-list-footer">
+          <button id="rss-load-more" type="button" hidden>加载更多</button>
+        </div>
+      </section>
+
       <section class="reader-shell">
+        <div id="rss-article-bar" class="rss-article-bar" hidden>
+          <div class="rss-article-meta" id="rss-article-meta"></div>
+          <div class="rss-article-actions">
+            <button type="button" data-rss-action="unread" title="标记未读" aria-label="标记未读">✉</button>
+            <button type="button" data-rss-action="star" title="收藏" aria-label="收藏">☆</button>
+            <button type="button" data-rss-action="later" title="稍后读" aria-label="稍后读">🕑</button>
+            <button type="button" data-rss-action="hide" title="不感兴趣" aria-label="不感兴趣">⊘</button>
+            <button type="button" data-rss-action="extract" title="提取全文" aria-label="提取全文">⤓</button>
+            <button type="button" data-rss-action="save" title="保存到文档" aria-label="保存到文档">⇥</button>
+            <a id="rss-article-origin" href="#" target="_blank" rel="noopener noreferrer" title="打开原文" aria-label="打开原文">↗</a>
+          </div>
+        </div>
         <div class="reader-toolbar">
           <div>
             <span class="section-label">阅读中</span>
@@ -217,6 +289,12 @@
             <button id="deep-page" type="button">深入解析当前页</button>
           </div>
 
+          <div class="quick-actions rss-quick-actions" id="rss-quick-actions" aria-label="资讯快捷解析" hidden>
+            <button type="button" data-rss-ai="judge">帮我判断是否值得深读</button>
+            <button type="button" data-rss-ai="summary">生成结构化摘要</button>
+            <button type="button" data-rss-ai="points">提取观点与证据</button>
+          </div>
+
           <div class="question-box">
             <textarea id="question-input" rows="4" placeholder="围绕选区或全文提问…"></textarea>
             <div class="question-actions">
@@ -250,6 +328,94 @@
     </main>
 
     <button id="exit-immersive" class="exit-immersive" type="button" title="退出沉浸阅读（Esc）" aria-label="退出沉浸阅读" hidden>×</button>
+
+    <dialog id="rss-add-dialog" class="rss-dialog">
+      <form method="dialog">
+        <h2>添加订阅</h2>
+        <p class="rss-dialog-hint">粘贴 RSS / Atom 地址，或网站地址，文澈会自动探测可订阅的来源。</p>
+        <label for="rss-add-url">订阅地址或网站地址</label>
+        <input id="rss-add-url" type="url" placeholder="https://example.com 或 https://example.com/feed.xml" />
+        <div id="rss-add-status" class="rss-dialog-status" role="status"></div>
+        <div id="rss-add-candidates" class="rss-candidates"></div>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="rss-add-cancel">取消</button>
+          <button value="default" type="button" id="rss-add-discover">探测</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rss-opml-dialog" class="rss-dialog">
+      <form method="dialog">
+        <h2>导入 / 导出 OPML</h2>
+        <div class="rss-opml-actions">
+          <label class="restore-button" for="rss-opml-file">选择 OPML 文件</label>
+          <input id="rss-opml-file" type="file" accept=".opml,.xml,text/xml" />
+          <button type="button" id="rss-opml-export">导出当前订阅</button>
+        </div>
+        <div id="rss-opml-status" class="rss-dialog-status" role="status"></div>
+        <div id="rss-opml-preview" class="rss-opml-preview"></div>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="rss-opml-cancel">关闭</button>
+          <button value="default" type="button" id="rss-opml-import" disabled>确认导入</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rss-feeds-dialog" class="rss-dialog rss-dialog-wide">
+      <form method="dialog">
+        <h2>管理订阅源</h2>
+        <div id="rss-feeds-manage-list" class="rss-feeds-manage-list"></div>
+        <div class="rss-folder-create">
+          <input id="rss-new-folder-name" type="text" maxlength="80" placeholder="新建订阅分组名称" aria-label="新建订阅分组名称" />
+          <button type="button" id="rss-create-folder">创建分组</button>
+        </div>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="rss-feeds-close">完成</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rss-prefs-dialog" class="rss-dialog">
+      <form method="dialog">
+        <h2>资讯设置</h2>
+        <fieldset>
+          <legend>关注主题（每行一个，可带权重，如「Agent:1」）</legend>
+          <textarea id="rss-prefs-topics" rows="4" placeholder="AI 工程&#10;Agent:1&#10;深度阅读"></textarea>
+        </fieldset>
+        <fieldset>
+          <legend>屏蔽主题（每行一个）</legend>
+          <textarea id="rss-prefs-blocked-topics" rows="2"></textarea>
+        </fieldset>
+        <div class="rss-prefs-grid">
+          <label>每日精选数量
+            <input id="rss-prefs-brief-count" type="number" min="3" max="30" />
+          </label>
+          <label>默认刷新间隔（分钟）
+            <input id="rss-prefs-interval" type="number" min="15" max="1440" />
+          </label>
+        </div>
+        <label class="rss-prefs-check">
+          <input id="rss-prefs-show-unread" type="checkbox" />
+          显示未读数
+        </label>
+        <label class="rss-prefs-check">
+          <input id="rss-prefs-auto-ai" type="checkbox" />
+          自动进行 AI 初评（关闭后资讯仍可正常使用）
+        </label>
+        <label class="rss-prefs-check">
+          <input id="rss-prefs-explore" type="checkbox" />
+          今日精选中保留一条探索性内容
+        </label>
+        <label class="rss-prefs-check">
+          <input id="rss-prefs-longform" type="checkbox" />
+          偏好长文
+        </label>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="rss-prefs-cancel">取消</button>
+          <button value="default" type="button" id="rss-prefs-save">保存设置</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="annotation-dialog" class="annotation-dialog">
       <form method="dialog">

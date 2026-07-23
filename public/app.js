@@ -35,10 +35,12 @@ import {
   normalizeReadingSettings,
   saveReadingSettings
 } from "./readingSettings.js";
+import { initRssMode } from "./rssView.js";
 
 const state = {
   document: null,
   documents: [],
+  sourceMode: "local",
   pages: [],
   docxPreview: null,
   archives: [],
@@ -126,6 +128,49 @@ const fontScaleOutput = document.querySelector("#font-scale");
 const resetReadingSettingsButton = document.querySelector("#reset-reading-settings");
 const immersiveToggleButton = document.querySelector("#immersive-toggle");
 const exitImmersiveButton = document.querySelector("#exit-immersive");
+const sourceLocalButton = document.querySelector("#source-local");
+const sourceRssButton = document.querySelector("#source-rss");
+
+let rssController = null;
+const rssHost = {
+  openDocument: (documentId) => loadDocument(documentId, 0),
+  reloadCurrentDocument: () => (state.document ? loadDocument(state.document.id, "saved") : Promise.resolve()),
+  setStatus,
+  getCurrentDocument: () => state.document,
+  refreshDocuments: () => loadDocumentList(),
+  askQuestion: (question) => {
+    questionInput.value = question;
+    if (state.panels.rightCollapsed) {
+      state.panels.rightCollapsed = false;
+      renderPanelState();
+    }
+    runAi("custom", question);
+  }
+};
+
+function setSourceMode(mode) {
+  if (state.sourceMode === mode) return;
+  state.sourceMode = mode;
+  const isRss = mode === "rss";
+  sourceLocalButton.dataset.active = String(!isRss);
+  sourceLocalButton.setAttribute("aria-selected", String(!isRss));
+  sourceRssButton.dataset.active = String(isRss);
+  sourceRssButton.setAttribute("aria-selected", String(isRss));
+  appShell.classList.toggle("rss-mode", isRss);
+  if (isRss) {
+    rssController ??= initRssMode(rssHost);
+    rssController.activate();
+    rssController.onDocumentLoaded(state.document);
+  } else {
+    rssController?.deactivate();
+  }
+  try {
+    window.localStorage.setItem("wenche.sourceMode", mode);
+  } catch {}
+}
+
+sourceLocalButton.addEventListener("click", () => setSourceMode("local"));
+sourceRssButton.addEventListener("click", () => setSourceMode("rss"));
 
 documentSidebarToggle.addEventListener("click", () => {
   state.panels.leftCollapsed = !state.panels.leftCollapsed;
@@ -463,6 +508,11 @@ if (state.documents.some((document) => Number(document.id) === lastDocumentId)) 
 }
 updatePaginationControls();
 updateSearchControls();
+try {
+  if (window.localStorage.getItem("wenche.sourceMode") === "rss") {
+    setSourceMode("rss");
+  }
+} catch {}
 
 function renderPanelState() {
   const { leftCollapsed, rightCollapsed } = state.panels;
@@ -785,6 +835,7 @@ async function loadDocument(id, targetPage = "saved") {
     showPage(targetPageIndex);
     renderHistory(payload.aiRecords || []);
     renderAnnotations();
+    rssController?.onDocumentLoaded(payload);
     exportCurrentButton.disabled = false;
     setStatus(loadWarning, Boolean(loadWarning));
   } catch (error) {
@@ -1671,6 +1722,7 @@ function captureFrameSelection(frame) {
 function updatePaginationControls() {
   const total = state.pages.length;
   const current = total === 0 ? 0 : state.pageIndex + 1;
+  rssController?.onReaderPageChanged(state.pageIndex, total);
   const categoryDocuments = state.document
     ? sortDocuments(
         state.documents.filter(

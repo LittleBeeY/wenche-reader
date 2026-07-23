@@ -2717,3 +2717,740 @@ select:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================
+   资讯（RSS）模式
+   ============================================ */
+
+.app-shell.rss-mode {
+  --rss-list-width: 360px;
+  grid-template-columns: var(--left-panel-width) var(--rss-list-width) minmax(0, 1fr) var(--right-panel-width);
+}
+
+.app-shell.rss-mode .local-only {
+  display: none !important;
+}
+
+/* ---- 资讯导航 ---- */
+
+.rss-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+}
+
+.rss-nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rss-nav-heading {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+}
+
+.rss-nav-heading-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.rss-nav-item {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.rss-nav-item:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+.rss-nav-item[data-active="true"] {
+  background: var(--active-bg, rgba(37, 99, 235, 0.12));
+  color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+
+.rss-feed-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rss-feed-item {
+  font-size: 13px;
+  padding-left: 20px;
+}
+
+.rss-feed-item.is-paused {
+  opacity: 0.55;
+}
+
+.rss-feed-item.has-error::after {
+  color: #c2410c;
+  content: " !";
+}
+
+.rss-folder > summary {
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  font-weight: 600;
+  justify-content: space-between;
+  list-style: none;
+  padding: 6px 10px;
+}
+
+.rss-folder > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rss-folder > summary::before {
+  content: "▸";
+  margin-right: 6px;
+}
+
+.rss-folder[open] > summary::before {
+  content: "▾";
+}
+
+.rss-folder .rss-feed-item {
+  padding-left: 30px;
+}
+
+.rss-unread-badge {
+  background: var(--active-bg, rgba(37, 99, 235, 0.15));
+  border-radius: 999px;
+  color: var(--accent, #2563eb);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+}
+
+.rss-nav-footer {
+  border-top: 1px solid var(--border-color, #e5e5e5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.rss-last-updated {
+  color: var(--text-muted, #7a7a7a);
+  flex: 1;
+  font-size: 12px;
+}
+
+.rss-nav-mini {
+  background: none;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+/* ---- 资讯列表 ---- */
+
+.rss-list-panel {
+  border-right: 1px solid var(--border-color, #e5e5e5);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+  min-width: 0;
+}
+
+.rss-list-toolbar {
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.rss-list-title-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.rss-list-title-row h2 {
+  flex: 1;
+  font-size: 16px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-list-title-row button {
+  background: none;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 3px 8px;
+}
+
+.rss-list-back {
+  display: none;
+}
+
+#rss-list-search {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  width: 100%;
+}
+
+.rss-list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rss-segments {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.rss-segments button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.rss-segments button[data-active="true"] {
+  background: var(--active-bg, rgba(37, 99, 235, 0.12));
+  color: var(--accent, #2563eb);
+  font-weight: 600;
+}
+
+.rss-brief-banner {
+  align-items: center;
+  background: var(--active-bg, rgba(37, 99, 235, 0.08));
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 14px;
+}
+
+.rss-brief-banner button {
+  background: none;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 2px 8px;
+}
+
+.rss-batch-bar {
+  align-items: center;
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  padding: 8px 14px;
+}
+
+.rss-batch-bar button {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 3px 8px;
+}
+
+.rss-entry-list {
+  flex: 1;
+  min-height: 0;
+  outline: none;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.rss-entry-list.view-cards {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+.rss-entry {
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.rss-entry:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+}
+
+.rss-entry.is-focused {
+  outline: 2px solid var(--accent, #2563eb);
+}
+
+.rss-entry[data-read="read"] .rss-entry-title {
+  opacity: 0.6;
+}
+
+.rss-entry-head {
+  align-items: baseline;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.rss-entry-source {
+  align-items: center;
+  color: var(--text-muted, #7a7a7a);
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-priority-badge {
+  background: #fef3c7;
+  border-radius: 4px;
+  color: #92400e;
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+.rss-entry-time {
+  color: var(--text-muted, #7a7a7a);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.rss-entry-title {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: -webkit-box;
+  font-size: 14px;
+  font-weight: 600;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+}
+
+.rss-entry-title:hover {
+  color: var(--accent, #2563eb);
+}
+
+.rss-entry-summary {
+  color: var(--text-muted, #555);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rss-entry-reason {
+  color: var(--accent, #2563eb);
+  font-size: 12px;
+  margin: 0;
+}
+
+.rss-entry-actions {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.rss-action {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 3px 6px;
+}
+
+.rss-action:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+}
+
+.rss-entry-select {
+  margin-left: auto;
+}
+
+.rss-entry-thumb {
+  border-radius: 8px;
+  height: 120px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.rss-unread-dot {
+  background: var(--accent, #2563eb);
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 8px;
+  margin-top: 6px;
+  width: 8px;
+}
+
+.view-compact .rss-entry {
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.view-compact .rss-entry-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  -webkit-line-clamp: 1;
+}
+
+.view-compact .rss-entry-source,
+.view-compact .rss-entry-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  margin-top: 2px;
+  max-width: 90px;
+}
+
+.rss-list-footer {
+  border-top: 1px solid var(--border-color, #e5e5e5);
+  padding: 8px;
+  text-align: center;
+}
+
+.rss-list-footer button {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 6px 16px;
+  width: 100%;
+}
+
+.rss-empty {
+  align-items: center;
+  color: var(--text-muted, #7a7a7a);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.rss-empty button {
+  border: 1px solid var(--accent, #2563eb);
+  border-radius: 8px;
+  color: var(--accent, #2563eb);
+  cursor: pointer;
+  padding: 8px 18px;
+}
+
+/* ---- 正文操作条 ---- */
+
+.rss-article-bar {
+  align-items: center;
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 6px 20px;
+}
+
+.rss-article-meta {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rss-article-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.rss-article-actions button,
+.rss-article-actions a {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 8px;
+  text-decoration: none;
+}
+
+.rss-article-actions button:hover,
+.rss-article-actions a:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+}
+
+.rss-article-actions button.is-on {
+  color: var(--accent, #2563eb);
+}
+
+/* ---- 资讯快捷解析 ---- */
+
+.rss-quick-actions {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr;
+  margin-top: 6px;
+}
+
+/* ---- 对话框 ---- */
+
+.rss-dialog {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 14px;
+  max-width: 520px;
+  padding: 24px;
+  width: min(92vw, 520px);
+}
+
+.rss-dialog-wide {
+  max-width: 720px;
+  width: min(94vw, 720px);
+}
+
+.rss-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.rss-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rss-dialog h2 {
+  margin: 0;
+}
+
+.rss-dialog-hint {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 13px;
+  margin: 0;
+}
+
+.rss-dialog input[type="url"],
+.rss-dialog input[type="text"],
+.rss-dialog input[type="number"],
+.rss-dialog textarea,
+.rss-dialog select {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  font: inherit;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.rss-dialog-status {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 13px;
+  min-height: 1em;
+}
+
+.rss-candidates,
+.rss-opml-preview,
+.rss-feeds-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.rss-candidate {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+}
+
+.rss-candidate ul {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 12px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rss-opml-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.rss-opml-list {
+  font-size: 13px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rss-opml-list li {
+  padding: 3px 0;
+}
+
+.rss-opml-list li[data-status="duplicate"],
+.rss-opml-list li[data-status="invalid"],
+.rss-opml-list li[data-status="unsupported"] {
+  opacity: 0.55;
+}
+
+.rss-feed-row {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.rss-feed-controls {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 2fr 1fr 0.8fr repeat(4, auto);
+}
+
+.rss-feed-controls button {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.rss-feed-controls button.is-danger {
+  color: #b91c1c;
+}
+
+.rss-feed-error {
+  color: #c2410c;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.rss-folder-create {
+  display: flex;
+  gap: 8px;
+}
+
+.rss-prefs-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.rss-prefs-check {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.rss-prefs-check input {
+  width: auto !important;
+}
+
+.rss-dialog fieldset {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.rss-dialog legend {
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+#rss-opml-file {
+  display: none;
+}
+
+/* ---- 响应式 ---- */
+
+@media (max-width: 1439px) {
+  .app-shell.rss-mode {
+    --left-panel-width: 252px;
+    --rss-list-width: 300px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .app-shell.rss-mode {
+    grid-template-columns: var(--left-panel-width) minmax(0, 1fr);
+  }
+
+  .app-shell.rss-mode .rss-list-panel {
+    display: none;
+  }
+
+  .app-shell.rss-mode:not(.rss-reading) .rss-list-panel {
+    border-right: none;
+    display: flex;
+    grid-column: 2;
+    height: auto;
+    min-height: 60vh;
+  }
+
+  .app-shell.rss-mode:not(.rss-reading) .reader-shell {
+    display: none;
+  }
+
+  .rss-list-back {
+    display: inline-block;
+  }
+}
+
+@media (max-width: 760px) {
+  .rss-feed-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .rss-article-meta {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rss-entry,
+  .rss-nav-item {
+    transition: none;
+  }
+}

@@ -841,7 +841,7 @@ test("backs up and restores documents and reading artifacts without secrets", as
   assert.equal(backupResponse.status, 200);
   const backup = await backupResponse.json();
   assert.equal(backup.format, "wenche-reader-backup");
-  assert.equal(backup.version, 1);
+  assert.equal(backup.version, 2);
   assert.equal(backup.documents.length, 1);
   assert.ok(backup.documents[0].originalFileBase64);
   assert.ok(!JSON.stringify(backup).includes("AI_API_KEY"));

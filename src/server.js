@@ -8,6 +8,9 @@ import { createAiProvider } from "./lib/aiProvider.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
 import { loadEnvFile } from "./lib/env.js";
 import { buildReadingMarkdown } from "./lib/markdownExport.js";
+import { registerRssRoutes } from "./lib/rss/rssRoutes.js";
+import { RssScheduler } from "./lib/rss/rssScheduler.js";
+import { RssService } from "./lib/rss/rssService.js";
 import {
   buildDocumentContext,
   buildSelectionContext
@@ -39,8 +42,18 @@ export function createApp(options = {}) {
   const aiRequestTimeoutMs = options.aiRequestTimeoutMs || 120000;
   const uploadLimits = { ...DEFAULT_UPLOAD_LIMITS, ...options.uploadLimits };
 
+  const rssService = options.rssService || new RssService({
+    storage,
+    aiProvider,
+    uploadDir,
+    allowPrivateHosts: Boolean(options.rss?.allowPrivateHosts),
+    fetchImpl: options.rss?.fetchImpl,
+    extractImpl: options.rss?.extractImpl
+  });
+
   const app = express();
   app.locals.storage = storage;
+  app.locals.rssService = rssService;
   app.disable("x-powered-by");
   app.use(setSecurityHeaders);
   app.use(express.json({ limit: "220mb" }));
@@ -196,6 +209,7 @@ export function createApp(options = {}) {
 
   app.get("/api/backup", async (req, res) => {
     try {
+      const includeRssCache = req.query.includeRssCache === "1";
       const snapshot = storage.getBackupData();
       const documents = [];
       for (const document of snapshot.documents) {
@@ -210,13 +224,14 @@ export function createApp(options = {}) {
       }
       const backup = {
         format: "wenche-reader-backup",
-        version: 1,
+        version: 2,
         createdAt: new Date().toISOString(),
         archives: snapshot.archives,
         documents,
         blocks: snapshot.blocks,
         aiRecords: snapshot.aiRecords,
-        annotations: snapshot.annotations
+        annotations: snapshot.annotations,
+        rss: storage.getRssBackupData({ includeCache: includeRssCache })
       };
       const date = new Date().toISOString().slice(0, 10);
       res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -441,6 +456,8 @@ export function createApp(options = {}) {
     });
   });
 
+  registerRssRoutes(app, { rssService, storage });
+
   app.use((error, req, res, next) => {
     if (error?.type === "entity.too.large") {
       return res.status(413).json({ error: "Request body exceeds the local size limit" });
@@ -585,7 +602,7 @@ function modeTitle(mode) {
 }
 
 function validateBackup(snapshot) {
-  if (snapshot?.format !== "wenche-reader-backup" || snapshot?.version !== 1) {
+  if (snapshot?.format !== "wenche-reader-backup" || ![1, 2].includes(snapshot?.version)) {
     throw new HttpError(400, "Unsupported backup file");
   }
   for (const key of ["archives", "documents", "blocks", "aiRecords", "annotations"]) {
@@ -872,7 +889,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await loadEnvFile(path.join(projectRoot, ".env"));
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || "127.0.0.1";
-  createApp().listen(port, host, () => {
+  const app = createApp();
+  app.listen(port, host, () => {
     console.log(`${APP_INFO.name} V${APP_INFO.version} running at http://${host}:${port}`);
+    const scheduler = new RssScheduler({ rssService: app.locals.rssService });
+    scheduler.start();
   });
 }

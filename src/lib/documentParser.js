@@ -40,6 +40,34 @@ export function isSupportedFile(originalName) {
   return SUPPORTED_EXTENSIONS.has(path.extname(originalName).toLowerCase());
 }
 
+/**
+ * 与导入文档同等级别的 HTML 清洗，供 RSS 摘要、正文与提取全文复用。
+ * Feed 路由不得自行拼接清洗规则。
+ */
+export function sanitizeArticleHtml(html) {
+  return sanitizeForArticle(html);
+}
+
+/**
+ * 把受控 HTML 输入解析为标题、文档块与安全 HTML（阅读快照生成路径）。
+ */
+export function parseArticleDocument({ title, html }) {
+  const source = `<h1>${escapeHtml(title || "未命名文章")}</h1>\n${html || ""}`;
+  const parsed = parseHtml(`${title || "article"}.html`, source);
+  return {
+    title: title || parsed.title,
+    blocks: parsed.blocks,
+    sanitizedHtml: parsed.sanitizedHtml
+  };
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export async function parseDocumentBuffer({ originalName, buffer }) {
   const extension = path.extname(originalName).toLowerCase();
   if (!isSupportedFile(originalName)) {
@@ -100,7 +128,19 @@ function parseMarkdown(originalName, markdown) {
 }
 
 function parseHtml(originalName, html, options = {}) {
-  const sanitizedHtml = sanitizeHtml(html, {
+  const sanitizedHtml = sanitizeForArticle(html);
+
+  const blocks = extractHtmlBlocks(sanitizedHtml);
+  return {
+    title: firstHeading(blocks) || titleTag(html) || path.basename(originalName),
+    blocks,
+    sanitizedHtml,
+    renderHtml: options.preserveDocumentLayout ? sanitizeLayoutDocument(html) : ""
+  };
+}
+
+function sanitizeForArticle(html) {
+  return sanitizeHtml(html, {
     allowedTags: [
       "article",
       "section",
@@ -152,14 +192,6 @@ function parseHtml(originalName, html, options = {}) {
     },
     disallowedTagsMode: "discard"
   });
-
-  const blocks = extractHtmlBlocks(sanitizedHtml);
-  return {
-    title: firstHeading(blocks) || titleTag(html) || path.basename(originalName),
-    blocks,
-    sanitizedHtml,
-    renderHtml: options.preserveDocumentLayout ? sanitizeLayoutDocument(html) : ""
-  };
 }
 
 function parseEpub(originalName, buffer) {

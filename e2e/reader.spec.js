@@ -24,7 +24,7 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
     .toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".library-source-switch [role='tab']").first())
     .toHaveText("本地文档");
-  await expect(page.locator(".library-source-switch [role='tab']").last()).toBeDisabled();
+  await expect(page.locator(".library-source-switch [role='tab']").last()).toHaveText("资讯");
   await expect(page.locator("#library-organize > summary")).toContainText("管理文档");
   await expect(page.locator(".data-tools > summary")).toContainText("备份与恢复");
   await expect(page.locator("#library-organize")).toHaveJSProperty("open", false);
