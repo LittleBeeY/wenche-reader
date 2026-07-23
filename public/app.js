@@ -73,7 +73,6 @@ const categoryInput = document.querySelector("#category-input");
 const documentSort = document.querySelector("#document-sort");
 const reader = document.querySelector("#reader");
 const readerTitle = document.querySelector("#reader-title");
-const documentTitle = document.querySelector("#document-title");
 const documentList = document.querySelector("#document-list");
 const documentSearch = document.querySelector("#document-search");
 const selectVisibleButton = document.querySelector("#select-visible");
@@ -976,7 +975,7 @@ function renderDocumentList() {
         state.documents.length === 0
           ? "暂无文档"
           : state.archiveFilter
-            ? "该归档暂无文章"
+            ? "该文件夹中暂无文档"
             : "没有匹配的文档"
       )
     );
@@ -991,7 +990,7 @@ function renderDocumentList() {
       section.className = "document-group";
 
       const heading = document.createElement("h3");
-      heading.textContent = `${group.category} · ${group.documents.length}`;
+      heading.textContent = `${categoryLabel(group.category)} · ${group.documents.length}`;
 
       const items = document.createElement("div");
       items.className = "document-group-items";
@@ -1094,9 +1093,9 @@ async function archiveSelectedDocuments() {
     return;
   }
 
-  archiveStatus.textContent = "正在保存分类";
+  archiveStatus.textContent = "正在移动文档";
   archiveStatus.classList.remove("is-error", "is-success");
-  setBusy(true, `正在归档 ${ids.length} 篇文档`);
+  setBusy(true, `正在移动 ${ids.length} 篇文档`);
   try {
     const response = await fetch("/api/documents/batch-category", {
       method: "PATCH",
@@ -1110,9 +1109,9 @@ async function archiveSelectedDocuments() {
     state.selectedDocumentIds.clear();
     await loadDocumentList();
     updatePaginationControls();
-    archiveStatus.textContent = `已保存到“${category}”`;
+    archiveStatus.textContent = `已移动到“${categoryLabel(category)}”`;
     archiveStatus.classList.add("is-success");
-    setStatus(`已归档 ${ids.length} 篇文档到“${category}”`);
+    setStatus(`已将 ${ids.length} 篇文档移动到“${categoryLabel(category)}”`);
   } catch (error) {
     archiveStatus.textContent = `保存失败：${error.message}`;
     archiveStatus.classList.add("is-error");
@@ -1126,9 +1125,9 @@ async function createArchive() {
   const name = newArchiveNameInput.value.trim();
   if (!name) return;
 
-  archiveStatus.textContent = "正在创建归档";
+  archiveStatus.textContent = "正在创建文件夹";
   archiveStatus.classList.remove("is-error", "is-success");
-  setBusy(true, "正在创建归档");
+  setBusy(true, "正在创建文件夹");
   try {
     const response = await fetch("/api/archives", {
       method: "POST",
@@ -1139,7 +1138,7 @@ async function createArchive() {
     newArchiveNameInput.value = "";
     await loadDocumentList();
     archiveCategoryInput.value = archive.name;
-    archiveStatus.textContent = `已创建归档“${archive.name}”`;
+    archiveStatus.textContent = `已创建文件夹“${archive.name}”`;
     archiveStatus.classList.add("is-success");
     updateSelectionActions();
     setStatus("");
@@ -1155,10 +1154,10 @@ async function createArchive() {
 async function renameSelectedArchive() {
   const archive = selectedArchive();
   if (!archive) return;
-  const name = window.prompt("输入新的归档名称", archive.name)?.trim();
+  const name = window.prompt("输入新的文件夹名称", archive.name)?.trim();
   if (!name || name === archive.name) return;
 
-  setBusy(true, "正在重命名归档");
+  setBusy(true, "正在重命名文件夹");
   try {
     const response = await fetch(`/api/archives/${archive.id}`, {
       method: "PATCH",
@@ -1188,13 +1187,13 @@ async function deleteSelectedArchive() {
   const archive = selectedArchive();
   if (!archive) return;
   if (archive.documentCount > 0) {
-    archiveStatus.textContent = "请先将归档内文章移出或删除";
+    archiveStatus.textContent = "请先移动或删除该文件夹中的文档";
     archiveStatus.className = "archive-status is-error";
     return;
   }
-  if (!window.confirm(`确定删除空归档“${archive.name}”吗？`)) return;
+  if (!window.confirm(`确定删除空文件夹“${archive.name}”吗？`)) return;
 
-  setBusy(true, "正在删除归档");
+  setBusy(true, "正在删除文件夹");
   try {
     const response = await fetch(`/api/archives/${archive.id}`, {
       method: "DELETE"
@@ -1203,7 +1202,7 @@ async function deleteSelectedArchive() {
     if (state.archiveFilter === archive.name) state.archiveFilter = "";
     archiveCategoryInput.value = "";
     await loadDocumentList();
-    archiveStatus.textContent = `已删除归档“${archive.name}”`;
+    archiveStatus.textContent = `已删除文件夹“${archive.name}”`;
     archiveStatus.className = "archive-status is-success";
     setStatus("");
   } catch (error) {
@@ -1224,8 +1223,8 @@ function selectedArchive() {
 function renderArchiveControls() {
   const selectedArchive = archiveCategoryInput.value;
   archiveCategoryInput.replaceChildren(
-    createOption("", "选择归档"),
-    createOption("未分类", "未分类"),
+    createOption("", "移动到文件夹…"),
+    createOption("未分类", "无文件夹"),
     ...state.archives.map((archive) =>
       createOption(archive.name, `${archive.name} (${archive.documentCount})`)
     )
@@ -1246,8 +1245,8 @@ function renderArchiveControls() {
     (document) => (document.category?.trim() || "未分类") === "未分类"
   ).length;
   archiveList.replaceChildren(
-    createArchiveLocation("", "全部", state.documents.length),
-    createArchiveLocation("未分类", "未分类", unclassifiedCount),
+    createArchiveLocation("", "全部文档", state.documents.length),
+    createArchiveLocation("未分类", "无文件夹", unclassifiedCount),
     ...state.archives.map((archive) =>
       createArchiveLocation(archive.name, archive.name, archive.documentCount)
     )
@@ -1273,6 +1272,10 @@ function createArchiveLocation(value, label, count) {
     renderDocumentList();
   });
   return button;
+}
+
+function categoryLabel(category) {
+  return category === "未分类" ? "无文件夹" : category;
 }
 
 async function deleteDocument(documentData) {
@@ -1359,16 +1362,16 @@ function updateSelectionActions() {
     visibleIds.length > 0 &&
     visibleIds.every((id) => state.selectedDocumentIds.has(id));
   deleteSelectedButton.disabled = state.busy || count === 0;
-  deleteSelectedButton.textContent = count > 0 ? `删除所选 (${count})` : "删除所选";
+  deleteSelectedButton.textContent = count > 0 ? `批量删除 (${count})` : "批量删除";
   selectVisibleButton.disabled = state.busy || visibleIds.length === 0;
-  selectVisibleButton.textContent = allVisibleSelected ? "取消全选" : "全选结果";
+  selectVisibleButton.textContent = allVisibleSelected ? "取消选择" : "选择当前列表";
   archiveSelectedButton.disabled =
     state.busy || archiveIds.length === 0 || !archiveCategoryInput.value.trim();
   archiveSelectedButton.textContent = count > 0
-    ? `放入 (${count})`
+    ? `移动 (${count})`
     : state.document
-      ? "放入当前"
-      : "放入归档";
+      ? "移动当前文档"
+      : "移动";
   createArchiveButton.disabled = state.busy || !newArchiveNameInput.value.trim();
   const archive = selectedArchive();
   renameArchiveButton.disabled = state.busy || !archive;
@@ -1388,7 +1391,6 @@ function clearDocumentView() {
   readerSearchInput.value = "";
   applyReadingSettings();
   readerTitle.textContent = "上传一篇文章开始阅读";
-  documentTitle.textContent = "未选择";
   reader.replaceChildren();
   renderHistory([]);
   renderAnnotations();
@@ -1400,7 +1402,6 @@ function clearDocumentView() {
 
 function renderDocumentHeader(documentData) {
   readerTitle.textContent = documentData.title;
-  documentTitle.textContent = documentData.title;
   renderDocumentList();
 }
 
