@@ -4,11 +4,11 @@
  */
 
 export const RANKING_WEIGHTS = Object.freeze({
-  topicRelevance: 0.30,
-  sourceAffinity: 0.22,
-  contentQuality: 0.18,
-  freshness: 0.15,
-  novelty: 0.10,
+  topicRelevance: 0.26,
+  sourceAffinity: 0.18,
+  contentQuality: 0.12,
+  freshness: 0.30,
+  novelty: 0.09,
   formatPreference: 0.05
 });
 
@@ -78,11 +78,13 @@ function contentQuality(analysis) {
 function freshnessScore(entry, now) {
   const timestamp = Date.parse(entry.publishedAt || entry.receivedAt || "") || now;
   const ageHours = Math.max(0, (now - timestamp) / 3600000);
-  if (ageHours <= 6) return 1;
-  if (ageHours <= 24) return 0.85;
-  if (ageHours <= 48) return 0.6;
-  if (ageHours <= 96) return 0.35;
-  return 0.15;
+  if (ageHours <= 3) return 1;
+  if (ageHours <= 12) return 0.9;
+  if (ageHours <= 24) return 0.78;
+  if (ageHours <= 48) return 0.55;
+  if (ageHours <= 96) return 0.3;
+  if (ageHours <= 168) return 0.15;
+  return 0.05;
 }
 
 function noveltyScore(entry) {

@@ -1,4 +1,5 @@
 import { loadRssViewState, saveRssViewState } from "./rssState.js";
+import { bindDisclosureState } from "./disclosureState.js";
 
 const SCOPE_TITLES = {
   today: "今日精选",
@@ -17,6 +18,9 @@ export function initRssMode(host) {
   const els = {
     appShell: document.querySelector("#app-shell"),
     nav: document.querySelector("#rss-nav"),
+    subscriptionsDisclosure: document.querySelector("#rss-subscriptions-disclosure"),
+    subscriptionsCount: document.querySelector("#rss-subscriptions-count"),
+    managementDisclosure: document.querySelector("#rss-management-disclosure"),
     feedTree: document.querySelector("#rss-feed-tree"),
     listPanel: document.querySelector("#rss-list-panel"),
     scopeTitle: document.querySelector("#rss-scope-title"),
@@ -45,6 +49,7 @@ export function initRssMode(host) {
     newFolderName: document.querySelector("#rss-new-folder-name"),
     prefsDialog: document.querySelector("#rss-prefs-dialog"),
     articleBar: document.querySelector("#rss-article-bar"),
+    articleBack: document.querySelector("#rss-article-back"),
     articleMeta: document.querySelector("#rss-article-meta"),
     articleOrigin: document.querySelector("#rss-article-origin"),
     quickActions: document.querySelector("#rss-quick-actions")
@@ -57,6 +62,7 @@ export function initRssMode(host) {
     brief: null,
     nextCursor: null,
     loading: false,
+    reloadAfterLoad: false,
     nav: { folders: [], feeds: [], unreadCount: 0, showUnreadCounts: true },
     selectedEntryIds: new Set(),
     focusIndex: -1,
@@ -65,6 +71,9 @@ export function initRssMode(host) {
     searchTimer: null,
     progressTimer: null
   };
+
+  bindDisclosureState(els.subscriptionsDisclosure, "rss-subscriptions");
+  bindDisclosureState(els.managementDisclosure, "rss-management");
 
   // ---------- 工具 ----------
 
@@ -100,6 +109,16 @@ export function initRssMode(host) {
     return new Date(iso).toLocaleDateString("zh-CN");
   }
 
+  function formatDateTime(iso) {
+    const date = new Date(iso);
+    if (!iso || Number.isNaN(date.getTime())) return "时间未知";
+    const pad = (value) => String(value).padStart(2, "0");
+    return [
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+      `${pad(date.getHours())}:${pad(date.getMinutes())}`
+    ].join(" ");
+  }
+
   function stripHtml(html) {
     const div = document.createElement("div");
     div.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(html || "") : (html || "");
@@ -121,6 +140,7 @@ export function initRssMode(host) {
     try {
       state.nav = await api("/api/rss/feeds");
       renderNav();
+      if (state.active) renderList();
     } catch (error) {
       host.setStatus(error.message, true);
     }
@@ -136,6 +156,7 @@ export function initRssMode(host) {
     const tree = els.feedTree;
     tree.replaceChildren();
     const showUnread = state.nav.showUnreadCounts;
+    els.subscriptionsCount.textContent = String(state.nav.feeds.length);
 
     const allButton = navItem("全部订阅", state.view.scope === "feed" && !state.view.scopeId, () => {
       setScope("feed", null);
@@ -151,23 +172,53 @@ export function initRssMode(host) {
     for (const folder of folders) {
       const details = document.createElement("details");
       details.className = "rss-folder";
+      bindDisclosureState(details, `rss-folder:${folder.id}`, {
+        defaultOpen:
+          state.view.scope === "folder" && state.view.scopeId === folder.id ||
+          state.view.scope === "feed" &&
+            state.nav.feeds.some(
+              (feed) => feed.id === state.view.scopeId && feed.folderId === folder.id
+            )
+      });
       const summary = document.createElement("summary");
-      const name = document.createElement("span");
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "rss-folder-open";
       name.textContent = folder.name;
+      name.title = `查看「${folder.name}」中的资讯`;
+      name.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setScope("folder", folder.id);
+      });
       summary.appendChild(name);
       if (showUnread && folder.unreadCount > 0) summary.appendChild(unreadBadge(folder.unreadCount));
-      summary.addEventListener("click", (event) => {
-        if (event.altKey) return;
-      });
-      summary.addEventListener("dblclick", () => setScope("folder", folder.id));
       details.appendChild(summary);
       for (const feed of state.nav.feeds.filter((item) => item.folderId === folder.id)) {
         details.appendChild(feedButton(feed, showUnread));
       }
       tree.appendChild(details);
     }
-    for (const feed of ungrouped) {
-      tree.appendChild(feedButton(feed, showUnread));
+    if (ungrouped.length > 0) {
+      const details = document.createElement("details");
+      details.className = "rss-folder";
+      bindDisclosureState(details, "rss-folder:ungrouped", {
+        defaultOpen:
+          state.view.scope === "feed" &&
+          ungrouped.some((feed) => feed.id === state.view.scopeId)
+      });
+      const summary = document.createElement("summary");
+      const name = document.createElement("span");
+      name.className = "rss-folder-label";
+      name.textContent = "未分组";
+      summary.appendChild(name);
+      const unreadCount = ungrouped.reduce((total, feed) => total + feed.unreadCount, 0);
+      if (showUnread && unreadCount > 0) summary.appendChild(unreadBadge(unreadCount));
+      details.appendChild(summary);
+      for (const feed of ungrouped) {
+        details.appendChild(feedButton(feed, showUnread));
+      }
+      tree.appendChild(details);
     }
 
     document.querySelector('[data-rss-scope="inbox"]').textContent =
@@ -211,6 +262,8 @@ export function initRssMode(host) {
       state.view.read = "all";
     }
     els.appShell.classList.remove("rss-reading");
+    els.appShell.classList.remove("rss-mobile-nav");
+    els.appShell.classList.add("rss-mobile-list");
     persistView();
     renderNav();
     loadEntries({ reset: true });
@@ -230,7 +283,10 @@ export function initRssMode(host) {
   }
 
   async function loadEntries({ reset = false, append = false } = {}) {
-    if (state.loading) return;
+    if (state.loading) {
+      if (reset) state.reloadAfterLoad = true;
+      return;
+    }
     state.loading = true;
     try {
       if (state.view.scope === "today") {
@@ -249,6 +305,10 @@ export function initRssMode(host) {
       host.setStatus(error.message, true);
     } finally {
       state.loading = false;
+      if (state.reloadAfterLoad) {
+        state.reloadAfterLoad = false;
+        loadEntries({ reset: true });
+      }
     }
   }
 
@@ -279,6 +339,8 @@ export function initRssMode(host) {
   function renderList() {
     const scopeName = state.view.scope === "feed" && state.view.scopeId
       ? state.nav.feeds.find((feed) => feed.id === state.view.scopeId)?.title || "订阅"
+      : state.view.scope === "feed"
+        ? "全部订阅"
       : state.view.scope === "folder" && state.view.scopeId
         ? state.nav.folders.find((folder) => folder.id === state.view.scopeId)?.name || "分组"
         : SCOPE_TITLES[state.view.scope] || "收件箱";
@@ -301,7 +363,7 @@ export function initRssMode(host) {
         "添加你信任的来源，文澈会把更新整理成可深读的资讯。",
         [
           { label: "添加订阅", action: () => openAddDialog() },
-          { label: "导入 OPML", action: () => els.opmlDialog.showModal() }
+          { label: "导入订阅源", action: () => els.opmlDialog.showModal() }
         ]
       ));
       return;
@@ -379,10 +441,20 @@ export function initRssMode(host) {
       const source = document.createElement("span");
       source.className = "rss-entry-source";
       source.textContent = entry.feedTitle;
-      const time = document.createElement("span");
+      const timestamp = entry.publishedAt || entry.receivedAt;
+      const time = document.createElement("time");
       time.className = "rss-entry-time";
-      time.textContent = relativeTime(entry.publishedAt || entry.receivedAt);
-      item.append(dot, title, source, time, entryStarButton(entry));
+      time.dateTime = timestamp || "";
+      time.title = relativeTime(timestamp);
+      time.textContent = formatDateTime(timestamp);
+      item.append(
+        dot,
+        createEntryThumbnail(entry, "compact"),
+        title,
+        source,
+        time,
+        entryStarButton(entry)
+      );
       return item;
     }
 
@@ -397,9 +469,12 @@ export function initRssMode(host) {
       badge.textContent = "重点";
       source.appendChild(badge);
     }
-    const time = document.createElement("span");
+    const timestamp = entry.publishedAt || entry.receivedAt;
+    const time = document.createElement("time");
     time.className = "rss-entry-time";
-    time.textContent = `${relativeTime(entry.publishedAt || entry.receivedAt)} · 约 ${entry.estimatedReadMinutes} 分钟`;
+    time.dateTime = timestamp || "";
+    time.title = relativeTime(timestamp);
+    time.textContent = `${formatDateTime(timestamp)} · 约 ${entry.estimatedReadMinutes} 分钟`;
     head.append(source, time);
 
     const title = document.createElement("button");
@@ -412,11 +487,27 @@ export function initRssMode(host) {
     summary.className = "rss-entry-summary";
     summary.textContent = snippetOf(entry, state.view.view === "cards" ? 80 : 140);
 
-    const reason = entry.briefReason || entry.recommendationReason;
-    const reasonEl = document.createElement("p");
-    reasonEl.className = "rss-entry-reason";
-    reasonEl.textContent = reason ? `推荐：${reason}` : "";
-    reasonEl.hidden = !reason;
+    const reason = state.view.scope === "today"
+      ? entry.briefReason || entry.recommendationReason
+      : "";
+    const reasonEl = reason ? document.createElement("p") : null;
+    if (reasonEl) {
+      reasonEl.className = "rss-entry-reason";
+      reasonEl.textContent = `推荐：${reason}`;
+    }
+
+    const thumbnail = createEntryThumbnail(
+      entry,
+      state.view.view === "cards" ? "card" : "summary"
+    );
+    if (state.view.view === "cards") {
+      const body = document.createElement("div");
+      body.className = "rss-entry-body";
+      body.append(head, title, summary);
+      if (reasonEl) body.append(reasonEl);
+      item.append(thumbnail, body);
+      return item;
+    }
 
     const actions = document.createElement("div");
     actions.className = "rss-entry-actions";
@@ -426,27 +517,61 @@ export function initRssMode(host) {
       actionButton("⊘", "不感兴趣", () => patchEntry(entry.id, { hidden: true })),
       entryStarCheckbox(entry)
     );
+    item.append(thumbnail, head, title, summary);
+    if (reasonEl) item.append(reasonEl);
+    item.append(actions);
+    return item;
+  }
 
-    if (state.view.view === "cards") {
-      if (entry.thumbnailUrl) {
-        const thumb = document.createElement("img");
-        thumb.className = "rss-entry-thumb";
-        thumb.src = entry.thumbnailUrl;
-        thumb.alt = "";
-        thumb.loading = "lazy";
-        thumb.referrerPolicy = "no-referrer";
-        thumb.addEventListener("error", () => thumb.remove());
-        item.appendChild(thumb);
+  function createEntryThumbnail(entry, variant) {
+    const thumbnail = document.createElement("button");
+    thumbnail.type = "button";
+    thumbnail.className = `rss-entry-thumb rss-entry-thumb-${variant}`;
+    thumbnail.setAttribute("aria-label", `打开 ${entry.title}`);
+    thumbnail.addEventListener("click", () => openEntry(entry.id));
+
+    const renderFallback = () => {
+      thumbnail.replaceChildren();
+      thumbnail.classList.add("is-fallback");
+      const label = String(entry.feedTitle || entry.title || "文").trim();
+      const hue = [...label].reduce(
+        (total, character) => (total * 31 + character.codePointAt(0)) % 360,
+        172
+      );
+      thumbnail.style.setProperty("--cover-hue", String(hue));
+      const monogram = document.createElement("span");
+      monogram.className = "rss-cover-monogram";
+      monogram.textContent = [...label][0] || "文";
+      thumbnail.appendChild(monogram);
+      if (variant === "card") {
+        const sourceLabel = document.createElement("small");
+        sourceLabel.className = "rss-cover-source";
+        sourceLabel.textContent = label;
+        thumbnail.appendChild(sourceLabel);
       }
-      const body = document.createElement("div");
-      body.className = "rss-entry-body";
-      body.append(head, title, summary, reasonEl, actions);
-      item.appendChild(body);
-      return item;
+    };
+    renderFallback();
+    const imageUrl = proxiedImageUrl(entry.thumbnailUrl || entry.feedIconUrl);
+    if (!imageUrl) {
+      return thumbnail;
     }
 
-    item.append(head, title, summary, reasonEl, actions);
-    return item;
+    const image = document.createElement("img");
+    image.src = imageUrl;
+    image.alt = "";
+    image.loading = "lazy";
+    image.referrerPolicy = "no-referrer";
+    if (!entry.thumbnailUrl) thumbnail.classList.add("is-feed-icon");
+    image.addEventListener("load", () => thumbnail.classList.add("has-image"), { once: true });
+    image.addEventListener("error", () => image.remove(), { once: true });
+    thumbnail.appendChild(image);
+    return thumbnail;
+  }
+
+  function proxiedImageUrl(value) {
+    const url = String(value || "").trim();
+    if (!/^https?:\/\//i.test(url)) return url;
+    return `/api/rss/images?url=${encodeURIComponent(url)}`;
   }
 
   function entryStarButton(entry) {
@@ -570,6 +695,7 @@ export function initRssMode(host) {
       const payload = await api(`/api/rss/entries/${entryId}/open`, { method: "POST" });
       state.activeEntry = payload.entry;
       els.appShell.classList.add("rss-reading");
+      els.appShell.classList.remove("rss-mobile-nav", "rss-mobile-list");
       await host.openDocument(payload.documentId);
       if (payload.sourceUpdated) {
         host.setStatus("来源正文已更新，当前展示的是打开时的阅读快照。", false);
@@ -597,15 +723,15 @@ export function initRssMode(host) {
   function renderArticleBar() {
     const entry = state.activeEntry;
     if (!entry) return;
-    const contentStatus = entry.contentHtml && stripHtml(entry.contentHtml).length > stripHtml(entry.summaryHtml || "") + 40
-      ? "RSS 全文"
+    const contentStatus = entry.contentSource === "extracted"
+      ? "已提取全文"
       : entry.contentHtml
         ? "RSS 全文"
         : "仅摘要";
     els.articleMeta.replaceChildren();
     const source = document.createElement("span");
     source.className = "rss-article-source";
-    source.textContent = `${entry.feedTitle}${entry.author ? ` · ${entry.author}` : ""} · ${relativeTime(entry.publishedAt || entry.receivedAt)} · 约 ${entry.estimatedReadMinutes} 分钟 · ${contentStatus}`;
+    source.textContent = `${entry.feedTitle}${entry.author ? ` · ${entry.author}` : ""} · ${formatDateTime(entry.publishedAt || entry.receivedAt)} · 约 ${entry.estimatedReadMinutes} 分钟 · ${contentStatus}`;
     els.articleMeta.appendChild(source);
 
     els.articleOrigin.href = entry.canonicalUrl || "#";
@@ -616,8 +742,12 @@ export function initRssMode(host) {
       if (action === "star") {
         button.textContent = entry.starred ? "★" : "☆";
         button.classList.toggle("is-on", entry.starred);
+        button.title = entry.starred ? "取消收藏文章" : "收藏文章";
+        button.setAttribute("aria-label", button.title);
       } else if (action === "later") {
         button.classList.toggle("is-on", entry.readLater);
+        button.title = entry.readLater ? "移出稍后读" : "稍后读";
+        button.setAttribute("aria-label", button.title);
       }
     });
   }
@@ -637,11 +767,16 @@ export function initRssMode(host) {
         host.setStatus("已标记为不感兴趣，后续将减少此类推荐。");
       } else if (action === "extract") {
         host.setStatus("正在提取全文…");
-        state.activeEntry = await api(`/api/rss/entries/${entry.id}/extract`, { method: "POST" });
-        const reopened = await api(`/api/rss/entries/${entry.id}/open`, { method: "POST" });
-        state.activeEntry = reopened.entry;
-        await host.openDocument(reopened.documentId);
-        host.setStatus("已提取全文并更新阅读快照。");
+        const extracted = await api(`/api/rss/entries/${entry.id}/extract`, { method: "POST" });
+        state.activeEntry = extracted.entry;
+        if (extracted.snapshot?.updated) {
+          await host.openDocument(entry.documentId);
+          host.setStatus("已提取全文并更新当前阅读快照。");
+        } else if (extracted.snapshot?.reason === "protected") {
+          host.setStatus("全文已提取；当前快照已有标注或 AI 记录，为避免引用错位，已保留原快照。", false);
+        } else {
+          host.setStatus("全文已提取。");
+        }
       } else if (action === "save") {
         const saved = await api(`/api/rss/entries/${entry.id}/save-to-library`, { method: "POST", body: {} });
         host.setStatus("已保存到本地文档。");
@@ -675,9 +810,9 @@ export function initRssMode(host) {
     try {
       const result = await api("/api/rss/refresh", { method: "POST" });
       const message = result.failed > 0
-        ? `刷新完成：新增 ${result.inserted} 条，${result.failed} 个来源失败。`
-        : result.inserted > 0
-          ? `刷新完成：新增 ${result.inserted} 条资讯。`
+        ? `刷新完成：新增 ${result.inserted} 条、更新 ${result.updated || 0} 条，${result.failed} 个来源失败。`
+        : result.inserted > 0 || result.updated > 0
+          ? `刷新完成：新增 ${result.inserted} 条，更新 ${result.updated || 0} 条。`
           : "没有新内容。";
       host.setStatus(message, result.failed > 0);
       await Promise.all([loadEntries({ reset: true }), loadNav(), updateRefreshStatus()]);
@@ -864,6 +999,31 @@ export function initRssMode(host) {
       }
       prioritySelect.value = String(feed.priority);
 
+      const intervalInput = document.createElement("input");
+      intervalInput.type = "number";
+      intervalInput.min = "15";
+      intervalInput.max = "1440";
+      intervalInput.value = String(feed.fetchIntervalMinutes);
+      intervalInput.title = "刷新间隔（分钟）";
+      intervalInput.setAttribute("aria-label", "刷新间隔（分钟）");
+
+      const fullTextSelect = document.createElement("select");
+      fullTextSelect.setAttribute("aria-label", "正文获取方式");
+      for (const [value, label] of [["feed", "使用 Feed 正文"], ["extract_on_open", "打开时提取全文"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        fullTextSelect.appendChild(option);
+      }
+      fullTextSelect.value = feed.fullTextMode;
+
+      const aiExcludedLabel = document.createElement("label");
+      aiExcludedLabel.className = "rss-feed-check";
+      const aiExcluded = document.createElement("input");
+      aiExcluded.type = "checkbox";
+      aiExcluded.checked = feed.aiExcluded;
+      aiExcludedLabel.append(aiExcluded, document.createTextNode(" 不参与 AI 初评"));
+
       const save = document.createElement("button");
       save.type = "button";
       save.textContent = "保存";
@@ -874,7 +1034,10 @@ export function initRssMode(host) {
             body: {
               title: titleInput.value.trim() || feed.title,
               folderId: folderSelect.value ? Number(folderSelect.value) : null,
-              priority: Number(prioritySelect.value)
+              priority: Number(prioritySelect.value),
+              fetchIntervalMinutes: Number(intervalInput.value),
+              fullTextMode: fullTextSelect.value,
+              aiExcluded: aiExcluded.checked
             }
           });
           host.setStatus("订阅设置已保存。");
@@ -924,7 +1087,18 @@ export function initRssMode(host) {
 
       const controls = document.createElement("div");
       controls.className = "rss-feed-controls";
-      controls.append(titleInput, folderSelect, prioritySelect, save, pause, refresh, remove);
+      controls.append(
+        titleInput,
+        folderSelect,
+        prioritySelect,
+        intervalInput,
+        fullTextSelect,
+        aiExcludedLabel,
+        save,
+        pause,
+        refresh,
+        remove
+      );
       row.append(controls, error);
       list.appendChild(row);
     }
@@ -1062,7 +1236,14 @@ export function initRssMode(host) {
   document.querySelector("#rss-open-prefs").addEventListener("click", () => openPrefs());
   els.refreshAll.addEventListener("click", () => refreshAll());
   els.listRefresh.addEventListener("click", () => refreshAll());
-  els.listBack.addEventListener("click", () => els.appShell.classList.remove("rss-reading"));
+  els.listBack.addEventListener("click", () => {
+    els.appShell.classList.remove("rss-reading", "rss-mobile-list");
+    els.appShell.classList.add("rss-mobile-nav");
+  });
+  els.articleBack.addEventListener("click", () => {
+    els.appShell.classList.remove("rss-reading", "rss-mobile-nav");
+    els.appShell.classList.add("rss-mobile-list");
+  });
   els.loadMore.addEventListener("click", () => loadEntries({ append: true }));
   els.listSearch.addEventListener("input", () => {
     clearTimeout(state.searchTimer);
@@ -1134,6 +1315,12 @@ export function initRssMode(host) {
       state.active = true;
       els.nav.hidden = false;
       els.listPanel.hidden = false;
+      if (!els.appShell.classList.contains("rss-reading")) {
+        els.appShell.classList.add("rss-mobile-nav");
+      }
+      if (window.matchMedia("(max-width: 1439px)").matches) {
+        host.collapseAiPanel?.();
+      }
       await Promise.all([loadNav(), loadEntries({ reset: true }), updateRefreshStatus()]);
       const current = host.getCurrentDocument();
       if (current?.sourceType === "rss" && state.activeEntry) {
@@ -1147,7 +1334,7 @@ export function initRssMode(host) {
       els.listPanel.hidden = true;
       els.articleBar.hidden = true;
       els.quickActions.hidden = true;
-      els.appShell.classList.remove("rss-reading");
+      els.appShell.classList.remove("rss-reading", "rss-mobile-nav", "rss-mobile-list");
     },
     onDocumentLoaded,
     onReaderPageChanged,

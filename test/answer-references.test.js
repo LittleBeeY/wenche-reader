@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveAnswerReferences } from "../public/answerReferences.js";
+import {
+  formatAnswerCitations,
+  resolveAnswerReferences
+} from "../public/answerReferences.js";
 
 test("resolves page and paragraph markers to clickable document locations", () => {
   const references = resolveAnswerReferences(
@@ -32,4 +35,27 @@ test("ignores location markers that are absent from the source context", () => {
   );
 
   assert.deepEqual(references, []);
+});
+
+test("resolves validated source citations by stable block id", () => {
+  const record = {
+    answer: "这个判断来自来源 [cite:B13]。",
+    contextSources: [
+      { id: "B13", blockId: 13, position: 3, pageIndex: 1 }
+    ]
+  };
+  const references = resolveAnswerReferences(
+    record,
+    [{ id: 13, position: 2, text: "Source paragraph" }],
+    [{ blockIds: [] }, { blockIds: [13] }]
+  );
+
+  assert.deepEqual(
+    references.map(({ label, pageIndex, blockId }) => ({ label, pageIndex, blockId })),
+    [{ label: "第 3 段 · 第 2 页", pageIndex: 1, blockId: 13 }]
+  );
+  assert.equal(
+    formatAnswerCitations(record.answer, record.contextSources),
+    "这个判断来自来源 〔原文 3〕。"
+  );
 });

@@ -14,7 +14,7 @@ function buildRss(entries, { title = "测试源", etag } = {}) {
       (entry) => `
     <item>
       <title>${entry.title}</title>
-      <link>https://origin.example.com/posts/${entry.id}</link>
+      <link>${entry.link || `https://origin.example.com/posts/${entry.id}`}</link>
       <guid>${entry.id}</guid>
       <pubDate>${(entry.date || NOW).toUTCString()}</pubDate>
       <description><![CDATA[<p>${entry.summary || entry.title} 的摘要</p>]]></description>
@@ -67,8 +67,21 @@ function makeFeedHandler(state) {
     if (url.pathname === "/article") {
       res.writeHead(200, { "content-type": "text/html" });
       return res.end(`<html><head><title>完整文章</title></head><body>
-        <article>${"<p>这是提取出来的完整正文段落，包含足够多的内容用于测试提取功能。</p>".repeat(6)}</article>
+        <article>${(state.articleBody || "这是提取出来的完整正文段落，包含足够多的内容用于测试提取功能。")
+          .split("\n")
+          .map((paragraph) => `<p>${paragraph}</p>`)
+          .join("")
+          .repeat(6)}</article>
         </body></html>`);
+    }
+    if (url.pathname === "/challenge") {
+      res.writeHead(200, { "content-type": "text/html" });
+      return res.end("<html><body><h2>环境异常</h2><p>当前环境异常，完成验证后即可继续访问。</p><a>去验证</a></body></html>");
+    }
+    if (url.pathname === "/image.png") {
+      state.imageRequests = Number(state.imageRequests || 0) + 1;
+      res.writeHead(200, { "content-type": "image/png" });
+      return res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
     }
     res.writeHead(404);
     res.end("not found");
@@ -176,6 +189,140 @@ test("refreshes with etag, dedupes entries and backs off on failures", async (t)
   assert.ok(Date.parse(nav.json.feeds[0].nextFetchAt) > Date.now() + 60 * 60000);
 });
 
+test("manual refresh checks every active feed and updates changed entries", async (t) => {
+  const feedState = {
+    entries: [{ id: "stable", title: "初始标题", body: "第一版正文内容。" }],
+    etag: "v1"
+  };
+  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+
+  const before = await api(baseUrl, "/api/rss/entries?read=all");
+  const entryId = before.json.entries[0].id;
+  feedState.etag = "v2";
+  feedState.entries = [{ id: "stable", title: "更新后的标题", body: "第二版正文内容，已经发生变化。" }];
+
+  const refreshed = await api(baseUrl, "/api/rss/refresh", { method: "POST" });
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.json.total, 1);
+  assert.equal(refreshed.json.inserted, 0);
+  assert.equal(refreshed.json.updated, 1);
+
+  const after = await api(baseUrl, `/api/rss/entries/${entryId}`);
+  assert.equal(after.json.title, "更新后的标题");
+  assert.match(after.json.contentText, /第二版正文内容/);
+});
+
+test("uses the saved default interval and resumes a paused feed when re-subscribing", async (t) => {
+  const feedState = { entries: sampleEntries };
+  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  await api(baseUrl, "/api/rss/preferences", {
+    method: "PATCH",
+    body: { fetchIntervalMinutes: 180 }
+  });
+
+  const added = await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  assert.equal(added.json.feed.fetchIntervalMinutes, 180);
+  await api(baseUrl, `/api/rss/feeds/${added.json.feed.id}`, {
+    method: "PATCH",
+    body: { disabled: true }
+  });
+  await api(baseUrl, `/api/rss/feeds/${added.json.feed.id}`, { method: "DELETE" });
+
+  const restored = await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  assert.equal(restored.status, 201);
+  assert.equal(restored.json.feed.disabled, false);
+  assert.equal(restored.json.feed.fetchIntervalMinutes, 180);
+});
+
+test("paginates oldest and smart ordering without gaps", async (t) => {
+  const entries = Array.from({ length: 65 }, (_, index) => ({
+    id: `entry-${index + 1}`,
+    title: `条目 ${index + 1}`,
+    body: `正文 ${index + 1}`,
+    date: new Date(NOW.getTime() - index * 60000)
+  }));
+  const { baseUrl, feedUrl, app } = await withTestServer(t, { feedState: { entries } });
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+
+  const all = await api(baseUrl, "/api/rss/entries?read=all&sort=newest&limit=100");
+  all.json.entries.forEach((entry, index) => {
+    app.locals.storage.saveRssEntryAnalysis(entry.id, {
+      priorityScore: (index % 9) / 10,
+      relevanceScore: (index % 9) / 10,
+      contentHash: "",
+      analyzedAt: new Date().toISOString()
+    });
+  });
+
+  for (const sort of ["oldest", "smart"]) {
+    const seen = [];
+    let cursor = "";
+    do {
+      const page = await api(
+        baseUrl,
+        `/api/rss/entries?read=all&sort=${sort}&limit=7${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      );
+      assert.equal(page.status, 200);
+      seen.push(...page.json.entries.map((entry) => entry.id));
+      cursor = page.json.nextCursor || "";
+    } while (cursor);
+    assert.equal(seen.length, 65);
+    assert.equal(new Set(seen).size, 65);
+  }
+});
+
+test("smart ordering gives recent entries a live boost over modest old-score advantages", async (t) => {
+  const entries = [
+    {
+      id: "recent-entry",
+      title: "刚发布的新文章",
+      date: new Date()
+    },
+    {
+      id: "old-entry",
+      title: "十天前的高分文章",
+      date: new Date(Date.now() - 10 * 24 * 3600000)
+    }
+  ];
+  const { baseUrl, feedUrl, app } = await withTestServer(t, { feedState: { entries } });
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+
+  const newest = await api(baseUrl, "/api/rss/entries?read=all&sort=newest");
+  const recent = newest.json.entries.find((entry) => entry.title === "刚发布的新文章");
+  const old = newest.json.entries.find((entry) => entry.title === "十天前的高分文章");
+  app.locals.storage.saveRssEntryAnalysis(recent.id, {
+    priorityScore: 0.55,
+    relevanceScore: 0.55,
+    contentHash: "",
+    analyzedAt: new Date().toISOString()
+  });
+  app.locals.storage.saveRssEntryAnalysis(old.id, {
+    priorityScore: 0.8,
+    relevanceScore: 0.8,
+    contentHash: "",
+    analyzedAt: new Date().toISOString()
+  });
+
+  const smart = await api(baseUrl, "/api/rss/entries?read=all&sort=smart");
+  assert.equal(smart.json.entries[0].title, "刚发布的新文章");
+});
+
 test("lists entries with filters and updates state including batch", async (t) => {
   const { baseUrl, feedUrl } = await withTestServer(t, { feedState: { entries: sampleEntries } });
   await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml` } });
@@ -265,6 +412,38 @@ test("creates an idempotent hidden reading snapshot and keeps it after unsubscri
   assert.equal(nav.json.feeds.length, 1);
 });
 
+test("repairs protected snapshot image html without changing stable block ids", async (t) => {
+  const { baseUrl, feedUrl, app } = await withTestServer(t, {
+    feedState: { entries: [sampleEntries[0]] }
+  });
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  const listed = await api(baseUrl, "/api/rss/entries?read=all");
+  const opened = await api(baseUrl, `/api/rss/entries/${listed.json.entries[0].id}/open`, {
+    method: "POST"
+  });
+  const before = app.locals.storage.getDocument(opened.json.documentId);
+  const block = before.blocks.find((item) => item.type === "paragraph");
+  app.locals.storage.db
+    .prepare("UPDATE blocks SET html = ? WHERE id = ?")
+    .run(`<p><img alt="${block.text}"></p>`, block.id);
+
+  const repaired = app.locals.storage.repairRssDocumentImages(opened.json.documentId, [{
+    position: block.position,
+    type: block.type,
+    text: block.text,
+    html: `<p><img src="/api/rss/images?url=https%3A%2F%2Fexample.com%2Fimage.png" alt="${block.text}"></p>`
+  }]);
+  const after = app.locals.storage.getDocument(opened.json.documentId);
+  const sameBlock = after.blocks.find((item) => item.id === block.id);
+
+  assert.equal(repaired.updated, true);
+  assert.equal(repaired.count, 1);
+  assert.match(sameBlock.html, /\/api\/rss\/images\?url=/);
+});
+
 test("saves an entry snapshot to the library on demand", async (t) => {
   const { baseUrl, feedUrl } = await withTestServer(t, { feedState: { entries: sampleEntries } });
   await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml` } });
@@ -281,21 +460,139 @@ test("saves an entry snapshot to the library on demand", async (t) => {
 });
 
 test("extracts full text on demand", async (t) => {
-  const { baseUrl, feedUrl } = await withTestServer(t, { feedState: { entries: sampleEntries } });
+  const feedState = {
+    entries: [{
+      id: "extractable",
+      title: "可提取文章",
+      body: "Feed 中的简短正文。",
+      link: ""
+    }],
+    articleBody: "这是第一次提取出来的完整正文，包含明确的第一版标记。"
+  };
+  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  feedState.entries[0].link = `${feedUrl}/article`;
   await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml` } });
   const entries = await api(baseUrl, "/api/rss/entries?read=all");
   const entry = entries.json.entries[0];
 
-  // 把条目的原文地址指到本地文章页，模拟提取
-  const storage = (await import("../src/lib/storage.js")).Storage;
+  const opened = await api(baseUrl, `/api/rss/entries/${entry.id}/open`, { method: "POST" });
   const response = await api(baseUrl, `/api/rss/entries/${entry.id}/extract`, { method: "POST" });
-  // 原文链接是公网示例地址，提取会失败，但错误必须可读且不破坏数据
-  assert.ok([200, 400, 422, 502].includes(response.status));
-  if (response.status !== 200) {
-    const after = await api(baseUrl, `/api/rss/entries/${entry.id}`);
-    assert.equal(after.json.title, entry.title);
-    assert.ok(after.json.contentHtml.length > 0);
-  }
+  assert.equal(response.status, 200);
+  assert.equal(response.json.entry.contentSource, "extracted");
+  assert.equal(response.json.snapshot.updated, true);
+
+  const document = await api(baseUrl, `/api/documents/${opened.json.documentId}`);
+  assert.match(document.json.blocks.map((block) => block.text).join(" "), /第一版标记/);
+
+  await api(baseUrl, "/api/annotations", {
+    method: "POST",
+    body: {
+      documentId: opened.json.documentId,
+      kind: "highlight",
+      pageIndex: 0,
+      selectedText: document.json.blocks[0].text,
+      blockIds: [document.json.blocks[0].id]
+    }
+  });
+  feedState.articleBody = "这是第二次提取出来的完整正文，包含明确的第二版标记。";
+  const protectedResult = await api(baseUrl, `/api/rss/entries/${entry.id}/extract`, { method: "POST" });
+  assert.equal(protectedResult.status, 200);
+  assert.equal(protectedResult.json.snapshot.reason, "protected");
+
+  const preserved = await api(baseUrl, `/api/documents/${opened.json.documentId}`);
+  assert.match(preserved.json.blocks.map((block) => block.text).join(" "), /第一版标记/);
+  assert.doesNotMatch(preserved.json.blocks.map((block) => block.text).join(" "), /第二版标记/);
+});
+
+test("does not replace rss content with an anti-bot verification page", async (t) => {
+  const feedState = {
+    entries: [{
+      id: "challenge-entry",
+      title: "需要验证的原文",
+      body: "Feed 中仍然可读的完整正文内容。",
+      link: ""
+    }]
+  };
+  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  feedState.entries[0].link = `${feedUrl}/challenge`;
+
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  const listed = await api(baseUrl, "/api/rss/entries?read=all");
+  const entryId = listed.json.entries[0].id;
+  const extracted = await api(baseUrl, `/api/rss/entries/${entryId}/extract`, { method: "POST" });
+
+  assert.equal(extracted.status, 422);
+  assert.match(extracted.json.error, /人工验证/);
+  const preserved = await api(baseUrl, `/api/rss/entries/${entryId}`);
+  assert.match(preserved.json.contentText, /Feed 中仍然可读/);
+  assert.doesNotMatch(preserved.json.contentText, /环境异常/);
+});
+
+test("rewrites and caches remote article images behind the local proxy", async (t) => {
+  const feedState = {
+    entries: [{
+      id: "image-entry",
+      title: "带图片文章",
+      body: '正文内容足够用于测试。<img data-src="/image.png" alt="测试图片">',
+      link: ""
+    }],
+    imageRequests: 0
+  };
+  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  feedState.entries[0].link = `${feedUrl}/article`;
+
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  const listed = await api(baseUrl, "/api/rss/entries?read=all");
+  const entry = await api(baseUrl, `/api/rss/entries/${listed.json.entries[0].id}`);
+  const source = entry.json.contentHtml.match(/\bsrc="([^"]+)"/)?.[1];
+
+  assert.ok(source?.startsWith("/api/rss/images?url="));
+  const first = await fetch(`${baseUrl}${source}`);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("content-type"), "image/png");
+  assert.ok((await first.arrayBuffer()).byteLength > 0);
+
+  const second = await fetch(`${baseUrl}${source}`);
+  assert.equal(second.status, 200);
+  assert.equal(feedState.imageRequests, 1);
+});
+
+test("repairs legacy broken article images when an old entry is opened", async (t) => {
+  const feedState = {
+    entries: [{
+      id: "legacy-image-entry",
+      title: "历史破图文章",
+      body: "Feed 中的旧正文。",
+      link: ""
+    }],
+    articleBody: '重新提取的正文。<img data-src="/image.png" alt="恢复图片">'
+  };
+  const { baseUrl, feedUrl, app } = await withTestServer(t, { feedState });
+  feedState.entries[0].link = `${feedUrl}/article`;
+
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  const listed = await api(baseUrl, "/api/rss/entries?read=all");
+  const entryId = listed.json.entries[0].id;
+  app.locals.storage.db
+    .prepare("UPDATE rss_entries SET content_html = ?, content_source = 'feed' WHERE id = ?")
+    .run('<p>历史正文</p><p><img alt="Image"></p>', entryId);
+
+  const opened = await api(baseUrl, `/api/rss/entries/${entryId}/open`, { method: "POST" });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.json.entry.contentSource, "extracted");
+  assert.match(opened.json.entry.contentHtml, /\/api\/rss\/images\?url=/);
+
+  const document = await api(baseUrl, `/api/documents/${opened.json.documentId}`);
+  assert.match(document.json.blocks.map((block) => block.html).join(""), /\/api\/rss\/images\?url=/);
 });
 
 test("generates a stable daily brief with reasons", async (t) => {
@@ -379,6 +676,12 @@ test("blocks ssrf attempts through the public api surface", async (t) => {
     assert.ok([400, 404, 502].includes(result.status), `${url} should be rejected, got ${result.status}`);
     assert.ok(!String(result.json?.error || "").includes("win.ini"));
   }
+
+  const blockedImage = await api(
+    baseUrl,
+    `/api/rss/images?url=${encodeURIComponent("http://127.0.0.1/private.png")}`
+  );
+  assert.equal(blockedImage.status, 400);
 });
 
 test("keeps subscriptions, states and preferences through backup and restore", async (t) => {

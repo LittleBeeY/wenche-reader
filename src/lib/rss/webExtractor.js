@@ -16,9 +16,12 @@ export async function extractFullText(url, { allowPrivateHosts = false } = {}) {
     throw new ExtractError(`原网页返回错误（HTTP ${response.status}）`);
   }
   const html = response.text();
+  if (isVerificationPage(html)) {
+    throw new ExtractError("原网页要求人工验证，已保留现有正文");
+  }
   const pageTitle = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() || "";
   const mainHtml = pickMainContent(html);
-  const cleaned = sanitizeArticleHtml(mainHtml);
+  const cleaned = sanitizeArticleHtml(mainHtml, { baseUrl: response.finalUrl });
   if (!cleaned || cleaned.replace(/<[^>]+>/g, "").trim().length < 40) {
     throw new ExtractError("未能从原网页提取到有效正文");
   }
@@ -78,6 +81,15 @@ function decodeBasicEntities(text) {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+function isVerificationPage(html) {
+  const text = String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  return (
+    (text.includes("环境异常") && text.includes("完成验证后")) ||
+    (text.includes("访问过于频繁") && text.includes("验证")) ||
+    (text.includes("安全验证") && text.includes("继续访问"))
+  );
 }
 
 export class ExtractError extends Error {

@@ -13,6 +13,40 @@ test.beforeEach(async ({ page }) => {
   }
 });
 
+test("keeps the left navigation compact and tucks low-frequency tools into More", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#file-input").setInputFiles({
+    name: "sidebar-check.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Sidebar behavior check.")
+  });
+
+  await expect(page.locator("#source-local")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#source-local")).toHaveText("本地文档");
+  await expect(page.locator("#source-rss")).toHaveText("资讯");
+  await expect(page.locator("#sidebar-more")).toHaveJSProperty("open", false);
+  await expect(page.locator("#local-library-filters")).toHaveJSProperty("open", false);
+  await expect(page.locator("#library-organize > summary")).toBeHidden();
+
+  await page.locator("#toggle-document-sidebar").click();
+  await expect(page.locator("#document-sidebar")).toHaveCSS("width", "72px");
+  await expect(page.locator("#source-local")).toBeVisible();
+  await expect(page.locator(".source-nav-label").first()).toBeHidden();
+  await expect(page.locator(".upload-icon")).toBeVisible();
+
+  await page.locator("#sidebar-more > summary").click();
+  await expect(page.locator("#document-sidebar")).toHaveCSS("width", "288px");
+  await expect(page.locator("#sidebar-more")).toHaveJSProperty("open", true);
+  await expect(page.locator("#library-organize > summary")).toContainText("管理文档");
+  await expect(page.locator(".data-tools > summary")).toContainText("备份与恢复");
+
+  await page.locator("#library-organize > summary").click();
+  await expect(page.locator(".document-select").first()).toBeVisible();
+  await expect(page.locator(".document-list-actions")).toBeVisible();
+  await page.locator("#library-organize > summary").click();
+  await expect(page.locator(".document-select").first()).toBeHidden();
+});
+
 test("reads complex HTML and persists highlights, notes, bookmarks, and AI answers", async ({ page }) => {
   await page.goto("/");
   await page.locator("#file-input").setInputFiles(
@@ -20,20 +54,6 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   );
 
   await expect(page.locator("#reader-title")).toHaveText("复杂 HTML 测试文章");
-  await expect(page.locator(".library-source-switch [role='tab']").first())
-    .toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".library-source-switch [role='tab']").first())
-    .toHaveText("本地文档");
-  await expect(page.locator(".library-source-switch [role='tab']").last()).toHaveText("资讯");
-  await expect(page.locator("#library-organize > summary")).toContainText("管理文档");
-  await expect(page.locator(".data-tools > summary")).toContainText("备份与恢复");
-  await expect(page.locator("#library-organize")).toHaveJSProperty("open", false);
-  await expect(page.locator(".document-select").first()).toBeHidden();
-  await page.locator("#library-organize > summary").click();
-  await expect(page.locator(".document-select").first()).toBeVisible();
-  await expect(page.locator(".document-list-actions")).toBeVisible();
-  await page.locator("#library-organize > summary").click();
-  await expect(page.locator(".document-select").first()).toBeHidden();
 
   const frame = page.frameLocator(".reader-rich-frame");
   await expect(frame.locator("table")).toBeVisible();
@@ -100,16 +120,18 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   await expect(page.locator("#bookmark-page")).toHaveText("★");
 
   await selectText(page, "Important concept");
+  await expect(page.locator("#ai-scope")).toHaveValue("selection");
   await page.locator("#selection-menu [data-action='direct']").click();
   const answer = page.locator(".answer-item").first();
   await expect(answer).toContainText("Important concept");
-  const paragraphReference = answer
+  await expect(answer.locator("small")).toContainText("选区");
+  const pageReference = answer
     .locator("[data-answer-reference]")
-    .filter({ hasText: "第 1 段" })
+    .filter({ hasText: "第 1 页" })
     .first();
-  await expect(paragraphReference).toBeVisible();
-  await paragraphReference.click();
-  await expect(page.locator(".doc-block.is-citation-target")).toContainText("Important concept");
+  await expect(pageReference).toBeVisible();
+  await pageReference.click();
+  await expect(page.locator("#reader .doc-block").first()).toBeVisible();
   await answer.locator("button[data-save-record]").click();
   await expect(answer.locator("button[data-save-record]")).toHaveText("已沉淀");
 
@@ -121,6 +143,81 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   await page.locator("#export-current").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^wenche-notes-.*\.md$/);
+});
+
+test("moves, resizes, groups, and collapses the AI panel", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.locator("#ai-panel")).toHaveCSS("position", "fixed");
+  const expandedBox = await page.locator("#ai-panel").boundingBox();
+  expect(expandedBox.width).toBeGreaterThan(300);
+  await expect(page.locator("#ai-quick-tools")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#answer-history")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#answer-count")).toHaveText("0");
+  await page.locator("#ai-quick-tools > summary").click();
+  await expect(page.locator("#explain-page")).toBeVisible();
+  await expect(page.locator("#deep-page")).toBeVisible();
+
+  const headerBox = await page.locator(".ai-header").boundingBox();
+  await page.mouse.move(headerBox.x + 60, headerBox.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(headerBox.x - 100, headerBox.y - 24);
+  await page.mouse.up();
+  const movedBox = await page.locator("#ai-panel").boundingBox();
+  expect(movedBox.x).toBeLessThan(expandedBox.x - 120);
+  expect(movedBox.y).toBeLessThan(expandedBox.y - 30);
+
+  const resizeBox = await page.locator("#ai-panel-resize").boundingBox();
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x - 40, resizeBox.y - 70);
+  await page.mouse.up();
+  const resizedBox = await page.locator("#ai-panel").boundingBox();
+  expect(resizedBox.width).toBeLessThan(movedBox.width);
+  expect(resizedBox.height).toBeLessThan(movedBox.height);
+
+  await page.reload();
+  const restoredBox = await page.locator("#ai-panel").boundingBox();
+  expect(restoredBox.x).toBeCloseTo(resizedBox.x, 0);
+  expect(restoredBox.y).toBeCloseTo(resizedBox.y, 0);
+  expect(restoredBox.width).toBeCloseTo(resizedBox.width, 0);
+  expect(restoredBox.height).toBeCloseTo(resizedBox.height, 0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("#app-shell")).toHaveClass(/is-right-collapsed/);
+  await expect(page.locator("#toggle-ai-panel")).toHaveAttribute("aria-expanded", "false");
+  const mobileBox = await page.locator("#ai-panel").boundingBox();
+  expect(mobileBox.width).toBe(48);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  await expect(page.locator("#app-shell")).toHaveClass(/is-right-collapsed/);
+  await expect(page.locator("#toggle-ai-panel")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#toggle-ai-panel")).toHaveText("AI");
+  await expect(page.locator("#ai-panel")).toHaveCSS("width", "48px");
+  const collapsedBox = await page.locator("#ai-panel").boundingBox();
+  expect(collapsedBox.width).toBe(48);
+  expect(collapsedBox.height).toBe(48);
+
+  await page.mouse.move(
+    collapsedBox.x + collapsedBox.width / 2,
+    collapsedBox.y + collapsedBox.height / 2
+  );
+  await page.mouse.down();
+  await page.mouse.move(collapsedBox.x - 96, collapsedBox.y + 104);
+  await page.mouse.up();
+  await expect(page.locator("#app-shell")).toHaveClass(/is-right-collapsed/);
+  const movedLauncher = await page.locator("#ai-panel").boundingBox();
+  expect(movedLauncher.x).toBeLessThan(collapsedBox.x - 90);
+  expect(movedLauncher.y).toBeGreaterThan(collapsedBox.y + 70);
+
+  await page.reload();
+  await expect(page.locator("#app-shell")).toHaveClass(/is-right-collapsed/);
+  await expect(page.locator("#ai-panel")).toHaveCSS("width", "48px");
+  const restoredLauncher = await page.locator("#ai-panel").boundingBox();
+  expect(restoredLauncher.x).toBeCloseTo(movedLauncher.x, 0);
+  expect(restoredLauncher.y).toBeCloseTo(movedLauncher.y, 0);
+  await page.locator("#toggle-ai-panel").click();
+  await expect(page.locator("#toggle-ai-panel")).toHaveAttribute("aria-expanded", "true");
 });
 
 test("adjusts and persists the reading layout", async ({ page }) => {
@@ -170,7 +267,7 @@ test("adjusts and persists the reading layout", async ({ page }) => {
   await expect(page.locator("#app-shell")).toHaveClass(/is-immersive/);
   await expect(page.locator("#document-sidebar")).toBeHidden();
   await expect(page.locator("#ai-panel")).toBeHidden();
-  await expect(page.locator(".reader-toolbar > div:first-child")).toBeHidden();
+  await expect(page.locator(".reader-heading")).toBeHidden();
   await expect(page.locator(".reader-search")).toBeHidden();
   await expect(page.locator(".page-controls")).toBeVisible();
   await expect(page.locator("#reading-settings")).toBeVisible();

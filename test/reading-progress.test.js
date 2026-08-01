@@ -35,3 +35,12 @@ test("ignores invalid or stale reading progress", () => {
   assert.equal(getSavedPageIndex(storage, 8), 0);
   assert.equal(getSavedPageIndex(storage, 999), 0);
 });
+
+test("saves an RSS page without replacing the last local document", () => {
+  const storage = createMemoryStorage();
+  saveReadingProgress(storage, 12, 3);
+  saveReadingProgress(storage, 99, 1, { rememberDocument: false });
+
+  assert.equal(getLastDocumentId(storage), 12);
+  assert.equal(getSavedPageIndex(storage, 99), 1);
+});

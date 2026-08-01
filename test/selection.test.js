@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildContextBundle,
   buildDocumentContext,
   buildSelectionContext
 } from "../src/lib/selectionContext.js";
@@ -21,7 +22,7 @@ test("builds context around selected blocks in document order", () => {
 
   assert.equal(
     context,
-    "[第 1 段] First block gives background.\n\n[第 2 段] Second block contains the core concept.\n\n[第 3 段] Third block expands the argument."
+    "[source:B1 position=1 type=paragraph]\nFirst block gives background.\n\n[source:B2 position=2 type=paragraph]\nSecond block contains the core concept.\n\n[source:B3 position=3 type=paragraph]\nThird block expands the argument."
   );
 });
 
@@ -55,4 +56,44 @@ test("builds bounded document context around blocks relevant to a question", () 
 
   assert.match(context, /光合作用把光能转化为化学能/);
   assert.ok(context.length <= 500);
+});
+
+test("builds a heading-bounded section with stable source ids", () => {
+  const bundle = buildContextBundle({
+    blocks: [
+      { id: 1, position: 0, type: "heading", text: "第一章", html: "<h1>第一章</h1>" },
+      { id: 2, position: 1, type: "paragraph", text: "第一章正文" },
+      { id: 3, position: 2, type: "heading", text: "第二章", html: "<h1>第二章</h1>" },
+      { id: 4, position: 3, type: "paragraph", text: "第二章正文" }
+    ],
+    selection: { blockIds: [2], pageIndex: 0 },
+    scope: "section",
+    maxChars: 1000
+  });
+
+  assert.deepEqual(bundle.blockIds, [1, 2]);
+  assert.match(bundle.text, /section="第一章"/);
+  assert.doesNotMatch(bundle.text, /第二章/);
+  assert.equal(bundle.sources[1].id, "B2");
+  assert.equal(bundle.sources[1].pageIndex, 0);
+});
+
+test("prioritizes externally ranked document blocks while preserving reading order", () => {
+  const blocks = Array.from({ length: 8 }, (_value, index) => ({
+    id: index + 1,
+    position: index,
+    type: index === 4 ? "heading" : "paragraph",
+    text: `Block ${index + 1} ${"content ".repeat(8)}`,
+    html: index === 4 ? "<h2>Target</h2>" : ""
+  }));
+  const bundle = buildContextBundle({
+    blocks,
+    scope: "document",
+    question: "target",
+    searchBlockIds: [7],
+    maxChars: 300
+  });
+
+  assert.ok(bundle.blockIds.includes(7));
+  assert.deepEqual(bundle.blockIds, [...bundle.blockIds].sort((a, b) => a - b));
 });

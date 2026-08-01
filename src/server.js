@@ -3,18 +3,17 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateAnswerCitations } from "./lib/answerCitations.js";
 import { APP_INFO } from "./lib/appInfo.js";
 import { createAiProvider } from "./lib/aiProvider.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
 import { loadEnvFile } from "./lib/env.js";
 import { buildReadingMarkdown } from "./lib/markdownExport.js";
 import { registerRssRoutes } from "./lib/rss/rssRoutes.js";
+import { RssImageCache } from "./lib/rss/imageProxy.js";
 import { RssScheduler } from "./lib/rss/rssScheduler.js";
 import { RssService } from "./lib/rss/rssService.js";
-import {
-  buildDocumentContext,
-  buildSelectionContext
-} from "./lib/selectionContext.js";
+import { buildContextBundle } from "./lib/selectionContext.js";
 import { CURRENT_DOCUMENT_FORMAT_VERSION, Storage } from "./lib/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +30,13 @@ const MAX_SELECTION_CHARS = 50000;
 const MAX_NOTE_CHARS = 20000;
 const MAX_BACKUP_BYTES = 150 * 1024 * 1024;
 const VALID_AI_MODES = new Set(["direct", "deep", "custom"]);
+const VALID_AI_SCOPES = new Set(["selection", "page", "section", "document"]);
+const MAX_SELECTION_ANCHORS = 100;
+const AI_CONTEXT_BUDGETS = Object.freeze({
+  direct: Object.freeze({ selection: 6000, page: 8000, section: 9000, document: 9000 }),
+  deep: Object.freeze({ selection: 12000, page: 14000, section: 16000, document: 16000 }),
+  custom: Object.freeze({ selection: 9000, page: 12000, section: 15000, document: 16000 })
+});
 const VALID_ANNOTATION_KINDS = new Set(["highlight", "note", "bookmark"]);
 const VALID_HIGHLIGHT_COLORS = new Set(["yellow", "green", "blue", "rose"]);
 
@@ -50,10 +56,16 @@ export function createApp(options = {}) {
     fetchImpl: options.rss?.fetchImpl,
     extractImpl: options.rss?.extractImpl
   });
+  const rssImageCache = options.rssImageCache || new RssImageCache({
+    cacheDir: path.join(dataDir, "rss-image-cache"),
+    allowPrivateHosts: Boolean(options.rss?.allowPrivateHosts),
+    fetchImpl: options.rss?.imageFetchImpl
+  });
 
   const app = express();
   app.locals.storage = storage;
   app.locals.rssService = rssService;
+  app.locals.rssImageCache = rssImageCache;
   app.disable("x-powered-by");
   app.use(setSecurityHeaders);
   app.use(express.json({ limit: "220mb" }));
@@ -456,7 +468,7 @@ export function createApp(options = {}) {
     });
   });
 
-  registerRssRoutes(app, { rssService, storage });
+  registerRssRoutes(app, { rssService, storage, rssImageCache });
 
   app.use((error, req, res, next) => {
     if (error?.type === "entity.too.large") {
@@ -661,6 +673,62 @@ function resolveUploadedFilePath(filePath, uploadDir, action) {
   return resolvedFile;
 }
 
+function resolveAiScope({ requestedScope, mode, selection }) {
+  if (VALID_AI_SCOPES.has(requestedScope)) return requestedScope;
+  const hasSelection =
+    Boolean(selection.text.trim()) ||
+    selection.blockIds.length > 0 ||
+    selection.anchors.length > 0;
+  if (hasSelection) return "selection";
+  return mode === "custom" ? "document" : "page";
+}
+
+function normalizeAiSelection(selection, blocks) {
+  const blockById = new Map((blocks || []).map((block) => [Number(block.id), block]));
+  const blockIds = [
+    ...(Array.isArray(selection.blockIds) ? selection.blockIds : []),
+    ...(Array.isArray(selection.anchors)
+      ? selection.anchors.map((anchor) => anchor?.blockId)
+      : [])
+  ]
+    .map((id) => Number(id))
+    .filter((id, index, ids) => blockById.has(id) && ids.indexOf(id) === index);
+
+  const rawAnchors = Array.isArray(selection.anchors)
+    ? selection.anchors.slice(0, MAX_SELECTION_ANCHORS)
+    : [];
+  const anchors = rawAnchors.flatMap((anchor) => {
+    const blockId = Number(anchor?.blockId);
+    const block = blockById.get(blockId);
+    const startOffset = Number(anchor?.startOffset);
+    const endOffset = Number(anchor?.endOffset);
+    if (
+      !block ||
+      !Number.isInteger(startOffset) ||
+      !Number.isInteger(endOffset) ||
+      startOffset < 0 ||
+      endOffset < startOffset
+    ) {
+      return [];
+    }
+    return [{
+      blockId,
+      startOffset: Math.min(startOffset, block.text.length),
+      endOffset: Math.min(endOffset, block.text.length)
+    }];
+  });
+
+  return {
+    text: selection.text.trim(),
+    blockIds,
+    anchors,
+    pageIndex:
+      Number.isInteger(selection.pageIndex) && selection.pageIndex >= 0
+        ? selection.pageIndex
+        : null
+  };
+}
+
 async function handleAiRequest({
   req,
   res,
@@ -680,10 +748,16 @@ async function handleAiRequest({
   };
   res.once("close", abortProvider);
   try {
-    const { documentId, mode = defaultMode, selection = {}, question = "" } = req.body || {};
+    const {
+      documentId,
+      mode = defaultMode,
+      scope: requestedScope,
+      selection = {},
+      question = ""
+    } = req.body || {};
     const normalizedSelection = selection && typeof selection === "object"
       ? { ...selection, text: selection.text ?? "" }
-      : { text: "", blockIds: [] };
+      : { text: "", blockIds: [], anchors: [] };
     if (!VALID_AI_MODES.has(mode)) {
       return res.status(400).json({ error: "Invalid AI mode" });
     }
@@ -701,25 +775,26 @@ async function handleAiRequest({
       return res.status(404).json({ error: "Document not found" });
     }
 
-    const selectedText = normalizedSelection.text;
-    const hasSelection = selectedText.trim() || normalizedSelection.blockIds?.length;
-    const rawContext = mode === "custom" && !hasSelection
-      ? buildDocumentContext({
-          blocks: document.blocks,
-          question,
-          maxChars: 12000
-        })
-      : buildSelectionContext({
-          blocks: document.blocks,
-          selection: normalizedSelection,
-          radius: mode === "deep" ? 2 : 1
-        });
-    const pageIndex = Number.isInteger(normalizedSelection.pageIndex) && normalizedSelection.pageIndex >= 0
-      ? normalizedSelection.pageIndex
-      : null;
-    const context = pageIndex === null
-      ? rawContext
-      : `[第 ${pageIndex + 1} 页]\n\n${rawContext}`;
+    const safeSelection = normalizeAiSelection(normalizedSelection, document.blocks);
+    const selectedText = safeSelection.text;
+    const scope = resolveAiScope({
+      requestedScope,
+      mode,
+      selection: safeSelection
+    });
+    const searchBlockIds = scope === "document"
+      ? storage.searchDocumentBlocks(document.id, question || selectedText, 14)
+      : [];
+    const contextBundle = buildContextBundle({
+      blocks: document.blocks,
+      selection: safeSelection,
+      scope,
+      question,
+      radius: mode === "deep" ? 2 : 1,
+      maxChars: AI_CONTEXT_BUDGETS[mode][scope],
+      searchBlockIds
+    });
+    const context = contextBundle.text;
     const aiInput = {
       mode,
       selectedText,
@@ -738,7 +813,11 @@ async function handleAiRequest({
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders();
-      writeSse(res, "start", { mode });
+      writeSse(res, "start", {
+        mode,
+        scope,
+        sources: contextBundle.sources
+      });
       result = await aiProvider.streamExplain(aiInput, async (delta) => {
         if (!res.destroyed) writeSse(res, "delta", { delta });
       });
@@ -746,21 +825,49 @@ async function handleAiRequest({
       result = await aiProvider.explain(aiInput);
     }
 
+    const citations = validateAnswerCitations(result.answer, contextBundle.sources);
+    result.answer = citations.answer;
+    const usage = result.usage || {};
     const recordId = storage.addAiRecord({
       documentId: document.id,
       mode,
+      scope,
       question,
       selectedText,
+      selectionAnchors: safeSelection.anchors,
       context,
+      contextBlockIds: contextBundle.blockIds,
+      contextSources: contextBundle.sources,
       answer: result.answer,
-      provider: result.provider
+      provider: result.provider,
+      model: result.model || "",
+      promptVersion: result.promptVersion || "",
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      latencyMs: result.latencyMs,
+      firstTokenMs: result.firstTokenMs,
+      contextChars: context.length
     });
 
     if (wantsStream) {
-      writeSse(res, "done", { ...result, recordId });
+      writeSse(res, "done", {
+        ...result,
+        recordId,
+        scope,
+        sources: contextBundle.sources,
+        citedSourceIds: citations.citedSourceIds,
+        invalidCitationCount: citations.invalidCitationCount
+      });
       return res.end();
     }
-    return res.json({ ...result, recordId });
+    return res.json({
+      ...result,
+      recordId,
+      scope,
+      sources: contextBundle.sources,
+      citedSourceIds: citations.citedSourceIds,
+      invalidCitationCount: citations.invalidCitationCount
+    });
   } catch (error) {
     if (timedOut && !res.destroyed) {
       if (res.headersSent) {

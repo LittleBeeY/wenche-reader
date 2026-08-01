@@ -4,7 +4,7 @@ const VALID_READ_STATES = new Set(["unread", "read"]);
 const VALID_FULL_TEXT_MODES = new Set(["feed", "extract_on_open"]);
 const VALID_REMOTE_IMAGE_MODES = new Set(["always", "lazy", "never"]);
 
-export function registerRssRoutes(app, { rssService, storage }) {
+export function registerRssRoutes(app, { rssService, storage, rssImageCache }) {
   const sendError = (res, error) => {
     const statusCode = error?.statusCode || 500;
     return res.status(statusCode).json({ error: error.message });
@@ -87,7 +87,7 @@ export function registerRssRoutes(app, { rssService, storage }) {
 
   app.post("/api/rss/refresh", async (req, res) => {
     try {
-      return res.json(await rssService.refreshDueFeeds());
+      return res.json(await rssService.refreshDueFeeds({ force: true }));
     } catch (error) {
       return sendError(res, error);
     }
@@ -164,6 +164,21 @@ export function registerRssRoutes(app, { rssService, storage }) {
   });
 
   // ---------- 资讯列表与状态 ----------
+
+  app.get("/api/rss/images", async (req, res) => {
+    try {
+      const url = typeof req.query?.url === "string" ? req.query.url.trim() : "";
+      if (!url || url.length > 8192) {
+        return res.status(400).json({ error: "图片地址无效" });
+      }
+      const image = await rssImageCache.get(url);
+      res.setHeader("Content-Type", image.contentType);
+      res.setHeader("Cache-Control", "private, max-age=604800");
+      return res.sendFile(image.filePath);
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
 
   app.get("/api/rss/entries", (req, res) => {
     try {
@@ -384,7 +399,18 @@ function decodeCursor(value) {
   if (!value) return null;
   try {
     const parsed = JSON.parse(Buffer.from(String(value), "base64url").toString("utf8"));
-    return Array.isArray(parsed) && parsed.length === 2 ? parsed : null;
+    if (Array.isArray(parsed) && parsed.length === 2) {
+      return { sort: "newest", time: parsed[0], id: parsed[1] };
+    }
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!["newest", "oldest", "smart"].includes(parsed.sort)) return null;
+    if (typeof parsed.time !== "string" || !Number.isInteger(Number(parsed.id))) return null;
+    if (parsed.sort === "smart") {
+      if (![0, 1].includes(Number(parsed.readRank)) || !Number.isFinite(Number(parsed.priority))) {
+        return null;
+      }
+    }
+    return parsed;
   } catch {
     return null;
   }

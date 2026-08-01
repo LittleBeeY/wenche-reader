@@ -56,11 +56,22 @@ export class Storage {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         document_id INTEGER NOT NULL,
         mode TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'selection',
         question TEXT,
         selected_text TEXT,
+        selection_anchors TEXT NOT NULL DEFAULT '[]',
         context TEXT NOT NULL,
+        context_block_ids TEXT NOT NULL DEFAULT '[]',
+        context_sources TEXT NOT NULL DEFAULT '[]',
         answer TEXT NOT NULL,
         provider TEXT NOT NULL,
+        model TEXT NOT NULL DEFAULT '',
+        prompt_version TEXT NOT NULL DEFAULT '',
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        latency_ms INTEGER NOT NULL DEFAULT 0,
+        first_token_ms INTEGER NOT NULL DEFAULT 0,
+        context_chars INTEGER NOT NULL DEFAULT 0,
         saved INTEGER NOT NULL DEFAULT 0,
         saved_title TEXT NOT NULL DEFAULT '',
         saved_note TEXT NOT NULL DEFAULT '',
@@ -137,6 +148,7 @@ export class Storage {
         content_html TEXT NOT NULL DEFAULT '',
         content_text TEXT NOT NULL DEFAULT '',
         content_hash TEXT NOT NULL DEFAULT '',
+        content_source TEXT NOT NULL DEFAULT 'feed',
         thumbnail_url TEXT NOT NULL DEFAULT '',
         language TEXT NOT NULL DEFAULT '',
         estimated_read_minutes INTEGER NOT NULL DEFAULT 1,
@@ -250,6 +262,17 @@ export class Storage {
 
     const aiColumns = this.db.prepare("PRAGMA table_info(ai_records)").all();
     const aiColumnMigrations = [
+      ["scope", "TEXT NOT NULL DEFAULT 'selection'"],
+      ["selection_anchors", "TEXT NOT NULL DEFAULT '[]'"],
+      ["context_block_ids", "TEXT NOT NULL DEFAULT '[]'"],
+      ["context_sources", "TEXT NOT NULL DEFAULT '[]'"],
+      ["model", "TEXT NOT NULL DEFAULT ''"],
+      ["prompt_version", "TEXT NOT NULL DEFAULT ''"],
+      ["input_tokens", "INTEGER NOT NULL DEFAULT 0"],
+      ["output_tokens", "INTEGER NOT NULL DEFAULT 0"],
+      ["latency_ms", "INTEGER NOT NULL DEFAULT 0"],
+      ["first_token_ms", "INTEGER NOT NULL DEFAULT 0"],
+      ["context_chars", "INTEGER NOT NULL DEFAULT 0"],
       ["saved", "INTEGER NOT NULL DEFAULT 0"],
       ["saved_title", "TEXT NOT NULL DEFAULT ''"],
       ["saved_note", "TEXT NOT NULL DEFAULT ''"],
@@ -260,6 +283,44 @@ export class Storage {
         this.db.exec(`ALTER TABLE ai_records ADD COLUMN ${name} ${definition}`);
       }
     }
+
+    const rssEntryColumns = this.db.prepare("PRAGMA table_info(rss_entries)").all();
+    if (!rssEntryColumns.some((column) => column.name === "content_source")) {
+      this.db.exec(
+        "ALTER TABLE rss_entries ADD COLUMN content_source TEXT NOT NULL DEFAULT 'feed'"
+      );
+    }
+
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
+        block_id UNINDEXED,
+        document_id UNINDEXED,
+        text,
+        tokenize='trigram'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS blocks_fts_insert
+      AFTER INSERT ON blocks BEGIN
+        INSERT INTO blocks_fts(rowid, block_id, document_id, text)
+        VALUES (new.id, new.id, new.document_id, new.text);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS blocks_fts_delete
+      AFTER DELETE ON blocks BEGIN
+        DELETE FROM blocks_fts WHERE rowid = old.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS blocks_fts_update
+      AFTER UPDATE OF text, document_id ON blocks BEGIN
+        DELETE FROM blocks_fts WHERE rowid = old.id;
+        INSERT INTO blocks_fts(rowid, block_id, document_id, text)
+        VALUES (new.id, new.id, new.document_id, new.text);
+      END;
+
+      DELETE FROM blocks_fts;
+      INSERT INTO blocks_fts(rowid, block_id, document_id, text)
+      SELECT id, id, document_id, text FROM blocks;
+    `);
 
     this.db.exec(`
       INSERT OR IGNORE INTO archive_categories (name, created_at)
@@ -347,7 +408,13 @@ export class Storage {
       .all(id);
     const aiRecords = this.db
       .prepare(`
-        SELECT id, mode, question, selected_text AS selectedText, context, answer, provider,
+        SELECT id, mode, scope, question, selected_text AS selectedText,
+          selection_anchors AS selectionAnchors, context,
+          context_block_ids AS contextBlockIds, context_sources AS contextSources,
+          answer, provider, model, prompt_version AS promptVersion,
+          input_tokens AS inputTokens, output_tokens AS outputTokens,
+          latency_ms AS latencyMs, first_token_ms AS firstTokenMs,
+          context_chars AS contextChars,
           saved, saved_title AS savedTitle, saved_note AS savedNote,
           saved_at AS savedAt, created_at AS createdAt
         FROM ai_records
@@ -369,6 +436,21 @@ export class Storage {
       .map(normalizeAnnotation);
 
     return { ...document, blocks, aiRecords, annotations };
+  }
+
+  searchDocumentBlocks(documentId, query, limit = 12) {
+    const matchQuery = buildFtsMatchQuery(query);
+    if (!matchQuery) return [];
+    return this.db
+      .prepare(`
+        SELECT block_id AS blockId, bm25(blocks_fts) AS rank
+        FROM blocks_fts
+        WHERE blocks_fts MATCH ? AND document_id = ?
+        ORDER BY rank ASC
+        LIMIT ?
+      `)
+      .all(matchQuery, Number(documentId), Math.max(1, Math.min(50, Number(limit) || 12)))
+      .map((result) => Number(result.blockId));
   }
 
   replaceDocumentContent({ documentId, title, renderHtml = "", blocks }) {
@@ -399,20 +481,55 @@ export class Storage {
     }
   }
 
-  addAiRecord({ documentId, mode, question, selectedText, context, answer, provider }) {
+  addAiRecord({
+    documentId,
+    mode,
+    scope = "selection",
+    question,
+    selectedText,
+    selectionAnchors = [],
+    context,
+    contextBlockIds = [],
+    contextSources = [],
+    answer,
+    provider,
+    model = "",
+    promptVersion = "",
+    inputTokens = 0,
+    outputTokens = 0,
+    latencyMs = 0,
+    firstTokenMs = 0,
+    contextChars = 0
+  }) {
     const result = this.db
       .prepare(`
-        INSERT INTO ai_records (document_id, mode, question, selected_text, context, answer, provider, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ai_records (
+          document_id, mode, scope, question, selected_text, selection_anchors,
+          context, context_block_ids, context_sources, answer, provider, model,
+          prompt_version, input_tokens, output_tokens, latency_ms, first_token_ms,
+          context_chars, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         documentId,
         mode,
+        scope,
         question || "",
         selectedText || "",
+        JSON.stringify(selectionAnchors),
         context,
+        JSON.stringify(contextBlockIds),
+        JSON.stringify(contextSources),
         answer,
         provider,
+        model,
+        promptVersion,
+        Number(inputTokens) || 0,
+        Number(outputTokens) || 0,
+        Number(latencyMs) || 0,
+        Number(firstTokenMs) || 0,
+        Number(contextChars) || 0,
         new Date().toISOString()
       );
 
@@ -442,8 +559,13 @@ export class Storage {
   getAiRecord(id) {
     const record = this.db
       .prepare(`
-        SELECT id, document_id AS documentId, mode, question,
-          selected_text AS selectedText, context, answer, provider,
+        SELECT id, document_id AS documentId, mode, scope, question,
+          selected_text AS selectedText, selection_anchors AS selectionAnchors,
+          context, context_block_ids AS contextBlockIds,
+          context_sources AS contextSources, answer, provider, model,
+          prompt_version AS promptVersion, input_tokens AS inputTokens,
+          output_tokens AS outputTokens, latency_ms AS latencyMs,
+          first_token_ms AS firstTokenMs, context_chars AS contextChars,
           saved, saved_title AS savedTitle, saved_note AS savedNote,
           saved_at AS savedAt, created_at AS createdAt
         FROM ai_records
@@ -457,9 +579,18 @@ export class Storage {
     return this.db
       .prepare(`
         SELECT ai_records.id, ai_records.document_id AS documentId,
-          documents.title AS documentTitle, ai_records.mode, ai_records.question,
-          ai_records.selected_text AS selectedText, ai_records.context, ai_records.answer,
-          ai_records.provider, ai_records.saved,
+          documents.title AS documentTitle, ai_records.mode, ai_records.scope,
+          ai_records.question, ai_records.selected_text AS selectedText,
+          ai_records.selection_anchors AS selectionAnchors, ai_records.context,
+          ai_records.context_block_ids AS contextBlockIds,
+          ai_records.context_sources AS contextSources, ai_records.answer,
+          ai_records.provider, ai_records.model,
+          ai_records.prompt_version AS promptVersion,
+          ai_records.input_tokens AS inputTokens,
+          ai_records.output_tokens AS outputTokens,
+          ai_records.latency_ms AS latencyMs,
+          ai_records.first_token_ms AS firstTokenMs,
+          ai_records.context_chars AS contextChars, ai_records.saved,
           ai_records.saved_title AS savedTitle, ai_records.saved_note AS savedNote,
           ai_records.saved_at AS savedAt, ai_records.created_at AS createdAt
         FROM ai_records
@@ -551,8 +682,13 @@ export class Storage {
         .all(),
       aiRecords: this.db
         .prepare(`
-          SELECT id, document_id AS documentId, mode, question,
-            selected_text AS selectedText, context, answer, provider,
+          SELECT id, document_id AS documentId, mode, scope, question,
+            selected_text AS selectedText, selection_anchors AS selectionAnchors,
+            context, context_block_ids AS contextBlockIds,
+            context_sources AS contextSources, answer, provider, model,
+            prompt_version AS promptVersion, input_tokens AS inputTokens,
+            output_tokens AS outputTokens, latency_ms AS latencyMs,
+            first_token_ms AS firstTokenMs, context_chars AS contextChars,
             saved, saved_title AS savedTitle, saved_note AS savedNote,
             saved_at AS savedAt, created_at AS createdAt
           FROM ai_records ORDER BY id
@@ -589,9 +725,11 @@ export class Storage {
     `);
     const insertAiRecord = this.db.prepare(`
       INSERT INTO ai_records (
-        id, document_id, mode, question, selected_text, context, answer,
-        provider, saved, saved_title, saved_note, saved_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, document_id, mode, scope, question, selected_text, selection_anchors,
+        context, context_block_ids, context_sources, answer, provider, model,
+        prompt_version, input_tokens, output_tokens, latency_ms, first_token_ms,
+        context_chars, saved, saved_title, saved_note, saved_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertAnnotation = this.db.prepare(`
       INSERT INTO annotations (
@@ -651,11 +789,22 @@ export class Storage {
           record.id,
           record.documentId,
           record.mode,
+          record.scope || "selection",
           record.question || "",
           record.selectedText || "",
+          JSON.stringify(record.selectionAnchors || []),
           record.context,
+          JSON.stringify(record.contextBlockIds || []),
+          JSON.stringify(record.contextSources || []),
           record.answer,
           record.provider,
+          record.model || "",
+          record.promptVersion || "",
+          Number(record.inputTokens) || 0,
+          Number(record.outputTokens) || 0,
+          Number(record.latencyMs) || 0,
+          Number(record.firstTokenMs) || 0,
+          Number(record.contextChars) || 0,
           record.saved ? 1 : 0,
           record.savedTitle || "",
           record.savedNote || "",
@@ -823,6 +972,77 @@ export class Storage {
     return this.getDocument(documentId);
   }
 
+  getDocumentReadingAssetCounts(documentId) {
+    return {
+      annotations: this.db
+        .prepare("SELECT COUNT(*) AS count FROM annotations WHERE document_id = ?")
+        .get(documentId).count,
+      aiRecords: this.db
+        .prepare("SELECT COUNT(*) AS count FROM ai_records WHERE document_id = ?")
+        .get(documentId).count
+    };
+  }
+
+  replaceRssDocumentSnapshot(documentId, { title, contentHash, blocks }) {
+    const document = this.getDocument(documentId);
+    if (!document || document.sourceType !== "rss") return null;
+    const assets = this.getDocumentReadingAssetCounts(documentId);
+    if (assets.annotations > 0 || assets.aiRecords > 0) {
+      return { updated: false, protected: true, document, assets };
+    }
+
+    const insertBlock = this.db.prepare(`
+      INSERT INTO blocks (document_id, position, type, text, html)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM blocks WHERE document_id = ?").run(documentId);
+      for (const block of blocks) {
+        insertBlock.run(documentId, block.position, block.type, block.text, block.html || "");
+      }
+      this.db
+        .prepare("UPDATE documents SET title = ?, content_hash = ?, format_version = ? WHERE id = ?")
+        .run(title, contentHash || "", CURRENT_DOCUMENT_FORMAT_VERSION, documentId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return { updated: true, protected: false, document: this.getDocument(documentId), assets };
+  }
+
+  repairRssDocumentImages(documentId, blocks) {
+    const document = this.getDocument(documentId);
+    if (!document || document.sourceType !== "rss") return { updated: false, reason: "missing" };
+    const existingImageBlocks = document.blocks.filter((block) =>
+      /<img\b/i.test(block.html || "") && !/<img\b[^>]*\bsrc=/i.test(block.html || "")
+    );
+    const replacementImageBlocks = (blocks || []).filter((block) =>
+      /<img\b[^>]*\bsrc=/i.test(block.html || "")
+    );
+    if (
+      existingImageBlocks.length === 0 ||
+      existingImageBlocks.length !== replacementImageBlocks.length ||
+      existingImageBlocks.some((block, index) => block.text !== replacementImageBlocks[index].text)
+    ) {
+      return { updated: false, reason: "structure_changed" };
+    }
+
+    const update = this.db.prepare("UPDATE blocks SET html = ? WHERE id = ? AND document_id = ?");
+    this.db.exec("BEGIN");
+    try {
+      for (let index = 0; index < existingImageBlocks.length; index += 1) {
+        update.run(replacementImageBlocks[index].html, existingImageBlocks[index].id, documentId);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return { updated: true, reason: "images_repaired", count: existingImageBlocks.length };
+  }
+
   // ---------- RSS: folders ----------
 
   createRssFolder(name) {
@@ -978,6 +1198,7 @@ export class Storage {
     const columns = {
       folderId: "folder_id",
       title: "title",
+      siteUrl: "site_url",
       description: "description",
       iconUrl: "icon_url",
       language: "language",
@@ -1043,13 +1264,42 @@ export class Storage {
 
   insertRssEntry(entry) {
     const now = new Date().toISOString();
+    const existing = this.db
+      .prepare("SELECT id, content_hash AS contentHash, content_source AS contentSource FROM rss_entries WHERE feed_id = ? AND dedupe_key = ?")
+      .get(entry.feedId, entry.dedupeKey);
     const result = this.db
       .prepare(`
-        INSERT OR IGNORE INTO rss_entries (
+        INSERT INTO rss_entries (
           feed_id, guid, dedupe_key, canonical_url, title, author, published_at, received_at,
-          summary_html, content_html, content_text, content_hash, thumbnail_url, language,
+          summary_html, content_html, content_text, content_hash, content_source, thumbnail_url, language,
           estimated_read_minutes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'feed', ?, ?, ?, ?, ?)
+        ON CONFLICT(feed_id, dedupe_key) DO UPDATE SET
+          guid = excluded.guid,
+          canonical_url = excluded.canonical_url,
+          title = excluded.title,
+          author = excluded.author,
+          published_at = COALESCE(excluded.published_at, rss_entries.published_at),
+          summary_html = excluded.summary_html,
+          content_html = CASE
+            WHEN rss_entries.content_source = 'extracted' THEN rss_entries.content_html
+            ELSE excluded.content_html
+          END,
+          content_text = CASE
+            WHEN rss_entries.content_source = 'extracted' THEN rss_entries.content_text
+            ELSE excluded.content_text
+          END,
+          content_hash = CASE
+            WHEN rss_entries.content_source = 'extracted' THEN rss_entries.content_hash
+            ELSE excluded.content_hash
+          END,
+          thumbnail_url = excluded.thumbnail_url,
+          language = excluded.language,
+          estimated_read_minutes = CASE
+            WHEN rss_entries.content_source = 'extracted' THEN rss_entries.estimated_read_minutes
+            ELSE excluded.estimated_read_minutes
+          END,
+          updated_at = excluded.updated_at
       `)
       .run(
         entry.feedId,
@@ -1070,8 +1320,16 @@ export class Storage {
         now,
         now
       );
-    if (result.changes === 0) return { created: false, id: null };
-    return { created: true, id: Number(result.lastInsertRowid) };
+    const id = existing?.id || Number(result.lastInsertRowid);
+    return {
+      created: !existing,
+      updated: Boolean(
+        existing &&
+        existing.contentSource !== "extracted" &&
+        existing.contentHash !== (entry.contentHash || "")
+      ),
+      id
+    };
   }
 
   getRssEntry(id) {
@@ -1083,7 +1341,8 @@ export class Storage {
           e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.content_html AS contentHtml, e.content_text AS contentText,
-          e.content_hash AS contentHash, e.thumbnail_url AS thumbnailUrl, e.language,
+          e.content_hash AS contentHash, e.content_source AS contentSource,
+          e.thumbnail_url AS thumbnailUrl, e.language,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
@@ -1134,15 +1393,42 @@ export class Storage {
     }
 
     const sortKey = "COALESCE(e.published_at, e.received_at)";
-    if (cursor && Array.isArray(cursor)) {
+    const readRank = "CASE WHEN e.read_state = 'unread' THEN 0 ELSE 1 END";
+    const priorityKey = "COALESCE(a.priority_score, 0)";
+    const liveFreshnessBoost = `CASE
+      WHEN julianday(${sortKey}) >= julianday('now', '-6 hours') THEN 0.30
+      WHEN julianday(${sortKey}) >= julianday('now', '-24 hours') THEN 0.24
+      WHEN julianday(${sortKey}) >= julianday('now', '-48 hours') THEN 0.14
+      WHEN julianday(${sortKey}) >= julianday('now', '-96 hours') THEN 0.05
+      WHEN julianday(${sortKey}) >= julianday('now', '-168 hours') THEN -0.05
+      ELSE -0.20
+    END`;
+    const smartScoreKey = `(${priorityKey} + ${liveFreshnessBoost})`;
+    if (cursor?.sort === "oldest" && sort === "oldest") {
+      conditions.push(`(${sortKey} > ? OR (${sortKey} = ? AND e.id > ?))`);
+      values.push(cursor.time, cursor.time, Number(cursor.id));
+    } else if (cursor?.sort === "smart" && sort === "smart") {
+      conditions.push(`(
+        ${readRank} > ?
+        OR (${readRank} = ? AND ${smartScoreKey} < ?)
+        OR (${readRank} = ? AND ${smartScoreKey} = ? AND ${sortKey} < ?)
+        OR (${readRank} = ? AND ${smartScoreKey} = ? AND ${sortKey} = ? AND e.id < ?)
+      )`);
+      values.push(
+        Number(cursor.readRank),
+        Number(cursor.readRank), Number(cursor.priority),
+        Number(cursor.readRank), Number(cursor.priority), cursor.time,
+        Number(cursor.readRank), Number(cursor.priority), cursor.time, Number(cursor.id)
+      );
+    } else if (cursor?.time && cursor?.id && sort !== "oldest") {
       conditions.push(`(${sortKey} < ? OR (${sortKey} = ? AND e.id < ?))`);
-      values.push(cursor[0], cursor[0], Number(cursor[1]));
+      values.push(cursor.time, cursor.time, Number(cursor.id));
     }
 
     const orderBy = sort === "oldest"
       ? `${sortKey} ASC, e.id ASC`
       : sort === "smart"
-        ? `CASE WHEN e.read_state = 'unread' THEN 0 ELSE 1 END ASC, COALESCE(a.priority_score, 0) DESC, ${sortKey} DESC, e.id DESC`
+        ? `${readRank} ASC, ${smartScoreKey} DESC, ${sortKey} DESC, e.id DESC`
         : `${sortKey} DESC, e.id DESC`;
 
     const rows = this.db
@@ -1152,12 +1438,13 @@ export class Storage {
           e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.thumbnail_url AS thumbnailUrl, e.language,
+          e.content_source AS contentSource,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
           e.created_at AS createdAt, e.updated_at AS updatedAt,
           a.summary AS analysisSummary, a.recommendation_reason AS recommendationReason,
-          a.priority_score AS priorityScore
+          a.priority_score AS priorityScore, ${smartScoreKey} AS smartScore
         FROM rss_entries e
         JOIN rss_feeds f ON f.id = e.feed_id
         LEFT JOIN rss_entry_analysis a ON a.entry_id = e.id
@@ -1170,9 +1457,19 @@ export class Storage {
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
-    const nextCursor = hasMore && last
-      ? [last.publishedAt || last.receivedAt, last.id]
-      : null;
+    let nextCursor = null;
+    if (hasMore && last) {
+      const time = last.publishedAt || last.receivedAt;
+      nextCursor = sort === "smart"
+        ? {
+            sort,
+            readRank: last.readState === "unread" ? 0 : 1,
+            priority: Number(last.smartScore || 0),
+            time,
+            id: last.id
+          }
+        : { sort, time, id: last.id };
+    }
     return {
       entries: pageRows.map(normalizeRssEntry),
       nextCursor
@@ -1190,6 +1487,7 @@ export class Storage {
           e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.thumbnail_url AS thumbnailUrl, e.language,
+          e.content_source AS contentSource,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
@@ -1256,11 +1554,18 @@ export class Storage {
     return result.changes;
   }
 
-  setRssEntryContent(id, { contentHtml, contentText, contentHash, estimatedReadMinutes }) {
+  setRssEntryContent(id, {
+    contentHtml,
+    contentText,
+    contentHash,
+    estimatedReadMinutes,
+    contentSource = "extracted"
+  }) {
     this.db
       .prepare(`
         UPDATE rss_entries
-        SET content_html = ?, content_text = ?, content_hash = ?, estimated_read_minutes = ?, updated_at = ?
+        SET content_html = ?, content_text = ?, content_hash = ?, estimated_read_minutes = ?,
+          content_source = ?, updated_at = ?
         WHERE id = ?
       `)
       .run(
@@ -1268,6 +1573,7 @@ export class Storage {
         contentText || "",
         contentHash || "",
         estimatedReadMinutes || 1,
+        contentSource,
         new Date().toISOString(),
         id
       );
@@ -1303,7 +1609,7 @@ export class Storage {
         LEFT JOIN rss_entry_analysis a ON a.entry_id = e.id
         WHERE e.hidden = 0 AND f.deleted_at IS NULL AND f.ai_excluded = 0
           AND COALESCE(e.published_at, e.received_at) >= ?
-          AND (a.entry_id IS NULL OR a.content_hash <> e.content_hash)
+          AND (a.entry_id IS NULL OR a.content_hash <> e.content_hash OR a.last_error <> '')
         ORDER BY f.priority DESC, COALESCE(e.published_at, e.received_at) DESC
         LIMIT ?
       `)
@@ -1483,7 +1789,8 @@ export class Storage {
       this.db
         .prepare(`
           UPDATE rss_entries
-          SET content_html = '', content_text = '', updated_at = ?
+          SET content_html = '', content_text = '', content_hash = '',
+            content_source = 'feed', updated_at = ?
           WHERE read_state = 'read' AND starred = 0 AND read_later = 0 AND document_id IS NULL
             AND COALESCE(published_at, received_at) < ?
             AND (content_html <> '' OR content_text <> '')
@@ -1542,7 +1849,8 @@ export class Storage {
           e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.content_html AS contentHtml, e.content_text AS contentText,
-          e.content_hash AS contentHash, e.thumbnail_url AS thumbnailUrl, e.language,
+          e.content_hash AS contentHash, e.content_source AS contentSource,
+          e.thumbnail_url AS thumbnailUrl, e.language,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
@@ -1555,7 +1863,14 @@ export class Storage {
     const entries = entryRows.map((row) => {
       const entry = normalizeRssEntry(row);
       if (keepContent(entry)) return entry;
-      return { ...entry, summaryHtml: "", contentHtml: "", contentText: "" };
+      return {
+        ...entry,
+        summaryHtml: "",
+        contentHtml: "",
+        contentText: "",
+        contentHash: "",
+        contentSource: "feed"
+      };
     });
     const analyses = this.db
       .prepare("SELECT entry_id AS entryId FROM rss_entry_analysis")
@@ -1590,10 +1905,10 @@ export class Storage {
     const insertEntry = this.db.prepare(`
       INSERT INTO rss_entries (
         id, feed_id, guid, dedupe_key, canonical_url, title, author, published_at, received_at,
-        summary_html, content_html, content_text, content_hash, thumbnail_url, language,
+        summary_html, content_html, content_text, content_hash, content_source, thumbnail_url, language,
         estimated_read_minutes, read_state, starred, read_later, hidden, read_progress,
         document_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertBrief = this.db.prepare(`
       INSERT INTO rss_briefs (id, brief_date, generated_at, scope, model, status)
@@ -1623,7 +1938,7 @@ export class Storage {
         entry.id, entry.feedId, entry.guid || "", entry.dedupeKey || `restored:${entry.id}`,
         entry.canonicalUrl || "", entry.title, entry.author || "", entry.publishedAt || null,
         entry.receivedAt || entry.createdAt, entry.summaryHtml || "", entry.contentHtml || "",
-        entry.contentText || "", entry.contentHash || "", entry.thumbnailUrl || "",
+        entry.contentText || "", entry.contentHash || "", entry.contentSource || "feed", entry.thumbnailUrl || "",
         entry.language || "", entry.estimatedReadMinutes || 1, entry.readState || "unread",
         entry.starred ? 1 : 0, entry.readLater ? 1 : 0, entry.hidden ? 1 : 0,
         entry.readProgress || 0, entry.documentId ?? null,
@@ -1652,7 +1967,36 @@ export class Storage {
 }
 
 function normalizeAiRecord(record) {
-  return { ...record, saved: Boolean(record.saved) };
+  return {
+    ...record,
+    saved: Boolean(record.saved),
+    selectionAnchors: parseJsonArray(record.selectionAnchors),
+    contextBlockIds: parseJsonArray(record.contextBlockIds).map(Number).filter(Number.isInteger),
+    contextSources: parseJsonArray(record.contextSources),
+    inputTokens: Number(record.inputTokens || 0),
+    outputTokens: Number(record.outputTokens || 0),
+    latencyMs: Number(record.latencyMs || 0),
+    firstTokenMs: Number(record.firstTokenMs || 0),
+    contextChars: Number(record.contextChars || 0)
+  };
+}
+
+function buildFtsMatchQuery(query) {
+  const normalized = String(query || "").normalize("NFKC").toLocaleLowerCase("zh-CN");
+  const terms = [];
+  for (const run of normalized.match(/[\p{L}\p{N}]{3,}/gu) || []) {
+    if (/\p{Script=Han}/u.test(run)) {
+      for (let index = 0; index <= run.length - 3; index += 1) {
+        terms.push(run.slice(index, index + 3));
+      }
+    } else {
+      terms.push(run);
+    }
+  }
+  return [...new Set(terms)]
+    .slice(0, 24)
+    .map((term) => `"${term.replaceAll("\"", "\"\"")}"`)
+    .join(" OR ");
 }
 
 function normalizeRssFeed(feed) {

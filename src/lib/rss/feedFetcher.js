@@ -6,6 +6,7 @@ import { createSafeLookup, validateRemoteUrl } from "./ssrfGuard.js";
 export const FETCH_LIMITS = Object.freeze({
   maxFeedBytes: 5 * 1024 * 1024,
   maxPageBytes: 10 * 1024 * 1024,
+  maxImageBytes: 8 * 1024 * 1024,
   maxRedirects: 5,
   timeoutMs: 15000
 });

@@ -62,7 +62,7 @@ function isPrivateIPv4(ip) {
   if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
   if (a === 192 && b === 168) return true; // RFC1918
   if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-  if (a === 192 && b === 0) return true; // 192.0.0.0/24 IANA 保留
+  if (a === 192 && b === 0 && parts[2] === 0) return true; // 192.0.0.0/24 IANA 保留
   if (a === 192 && b === 0 && parts[2] === 2) return true; // TEST-NET-1
   if (a === 198 && (b === 18 || b === 19)) return true; // 基准测试网段
   if (a === 198 && b === 51 && parts[2] === 100) return true; // TEST-NET-2
@@ -100,16 +100,16 @@ function isPrivateIPv6(ip) {
  */
 export function createSafeLookup({ allowPrivateHosts = false } = {}) {
   return function safeLookup(hostname, options, callback) {
+    const returnAll = Boolean(options?.all);
     dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
       if (error) return callback(error, null, null);
-      if (allowPrivateHosts) {
-        const first = addresses[0];
-        return callback(null, first.address, first.family);
-      }
-      const safe = addresses.filter((entry) => !isPrivateIP(entry.address));
+      const safe = allowPrivateHosts
+        ? addresses
+        : addresses.filter((entry) => !isPrivateIP(entry.address));
       if (safe.length === 0) {
         return callback(new SsrfError("该地址解析到本机或内网，已被安全策略拦截"), null, null);
       }
+      if (returnAll) return callback(null, safe);
       const first = safe[0];
       return callback(null, first.address, first.family);
     });

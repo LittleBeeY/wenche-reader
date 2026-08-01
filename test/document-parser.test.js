@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import AdmZip from "adm-zip";
 import test from "node:test";
-import { parseDocumentBuffer } from "../src/lib/documentParser.js";
+import { parseDocumentBuffer, sanitizeArticleHtml } from "../src/lib/documentParser.js";
 
 test("parses txt into ordered paragraph blocks", async () => {
   const result = await parseDocumentBuffer({
@@ -148,6 +148,30 @@ test("keeps safe embedded images as readable blocks", async () => {
   assert.equal(result.blocks[0].text, "Figure one");
   assert.match(result.blocks[0].html, /<img src="data:image\/gif;base64,/);
   assert.ok(!result.blocks[0].html.includes("onerror"));
+});
+
+test("rewrites remote and lazy article images through the local rss proxy", () => {
+  const html = sanitizeArticleHtml(
+    '<p><img src="/placeholder.gif" data-src="../images/figure.png" alt="Figure" onerror="evil()"></p>',
+    { baseUrl: "https://example.com/posts/2026/article" }
+  );
+
+  assert.match(
+    html,
+    /src="\/api\/rss\/images\?url=https%3A%2F%2Fexample\.com%2Fposts%2Fimages%2Ffigure\.png"/
+  );
+  assert.match(html, /loading="lazy"/);
+  assert.match(html, /decoding="async"/);
+  assert.ok(!html.includes("data-src"));
+  assert.ok(!html.includes("onerror"));
+});
+
+test("removes article image shells that have no usable source", () => {
+  const html = sanitizeArticleHtml('<p>before<img alt="missing">after</p>', {
+    baseUrl: "https://example.com/article"
+  });
+
+  assert.equal(html, "<p>beforeafter</p>");
 });
 
 test("preserves safe html layout css while removing active content", async () => {

@@ -34,6 +34,9 @@ test("completes the rss loop: subscribe, list, deep-read with AI, star and brief
   // 空状态：提供两个主要入口
   await page.locator("#source-rss").click();
   await expect(page.locator("#rss-nav")).toBeVisible();
+  await expect(page.locator("#rss-list-panel")).toBeVisible();
+  await expect(page.locator(".reader-shell")).toBeHidden();
+  await expect(page.locator("#ai-panel")).toBeHidden();
   await expect(page.locator(".rss-empty")).toContainText("添加你信任的来源");
 
   // 添加订阅：探测 → 确认
@@ -47,12 +50,27 @@ test("completes the rss loop: subscribe, list, deep-read with AI, star and brief
   await expect(page.locator("#rss-feed-tree .rss-feed-item")).toContainText("E2E 测试源");
   await page.locator('[data-rss-scope="inbox"]').click();
   await expect(page.locator(".rss-entry")).toHaveCount(2);
+  await expect(page.locator(".rss-entry-thumb")).toHaveCount(2);
+  await expect(page.locator(".rss-entry-thumb.is-fallback")).toHaveCount(2);
+  await expect(page.locator(".view-cards .rss-entry-actions")).toHaveCount(0);
+  await expect(page.locator(".rss-entry-reason")).toHaveCount(0);
+  await expect(page.locator(".rss-entry-time")).toHaveText([
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} · 约 \d+ 分钟$/,
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} · 约 \d+ 分钟$/
+  ]);
 
   // 打开第一条：创建阅读快照，自动标记已读，正文可操作
   await page.locator(".rss-entry-title").first().click();
-  await expect(page.locator("#rss-article-bar")).toBeVisible();
+  await expect(page.locator("#rss-article-bar")).not.toHaveAttribute("hidden");
+  await expect(page.locator(".reader-toolbar > #rss-article-bar")).toHaveCount(1);
+  await expect(page.locator("#bookmark-page")).toBeHidden();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+  await expect(page.locator(".reader-shell")).toBeVisible();
   await expect(page.locator("#reader-title")).toHaveText("Agent 工程实践案例");
   await expect(page.locator("#rss-article-meta")).toContainText("E2E 测试源");
+  await expect(page.locator("#rss-article-meta")).toContainText(
+    /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/
+  );
 
   // 划词解析：复用现有 AI 能力（Mock provider），选中正文段落块
   await page.locator("#reader .doc-block").nth(1).evaluate((element) => {
@@ -64,7 +82,7 @@ test("completes the rss loop: subscribe, list, deep-read with AI, star and brief
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   });
   await page.locator("#selection-menu [data-action='direct']").click();
-  await expect(page.locator("#answer-list .answer-item").first()).toContainText("简明解释");
+  await expect(page.locator("#answer-list .answer-item").first()).toContainText("直接解析");
 
   // 高亮保存后出现在沉淀面板
   await page.locator("#reader .doc-block").nth(1).evaluate((element) => {
@@ -84,8 +102,14 @@ test("completes the rss loop: subscribe, list, deep-read with AI, star and brief
   await expect(page.locator('[data-rss-action="star"]')).toHaveText("★");
 
   // 隐藏快照不出现在本地文档列表
+  await page.locator("#rss-article-back").click();
   await page.locator("#source-local").click();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+  await expect(page.locator(".reader-shell")).toBeVisible();
+  await expect(page.locator("#ai-panel")).toBeVisible();
   await expect(page.locator("#document-list")).not.toContainText("Agent 工程实践案例");
+  await expect(page.locator("#reader-title")).toHaveText("上传一篇文章开始阅读");
+  await expect(page.locator("#reader")).toBeEmpty();
 
   // 生成今日精选：给出推荐原因（其他浏览器项目可能已生成，两种状态都接受）
   await page.locator("#source-rss").click();
@@ -96,6 +120,10 @@ test("completes the rss loop: subscribe, list, deep-read with AI, star and brief
   }
   await expect(page.locator("#rss-brief-banner")).toContainText("今日精选");
   await expect(page.locator(".rss-entry-reason").first()).toContainText("推荐");
+  await expect.poll(async () => page.locator(".rss-entry-reason").first().evaluate((element) => {
+    const card = element.closest(".rss-entry");
+    return card && element.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom;
+  })).toBe(true);
 
   // 收藏范围可见已收藏条目
   await page.locator('[data-rss-scope="starred"]').click();
@@ -142,7 +170,8 @@ test("survives a reload with mode, subscriptions and read states intact", async 
   await page.locator(".rss-candidate button", { hasText: "确认订阅" }).click();
   await page.locator('[data-rss-scope="inbox"]').click();
   await page.locator(".rss-entry-title").first().click();
-  await expect(page.locator("#rss-article-bar")).toBeVisible();
+  await expect(page.locator("#rss-article-bar")).not.toHaveAttribute("hidden");
+  await expect(page.locator("#reader-title")).toHaveText("Agent 工程实践案例");
 
   await page.reload();
   // 模式偏好恢复：仍在资讯模式
@@ -151,4 +180,73 @@ test("survives a reload with mode, subscriptions and read states intact", async 
   await page.locator("#rss-read-filter [data-value='read']").click();
   await expect(page.locator(".rss-entry").first()).toBeVisible();
   await expect(page.locator(".rss-entry-list")).toContainText("Agent 工程实践案例");
+});
+
+test("uses single-task navigation on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.goto("/");
+  await page.locator("#source-rss").click();
+
+  await expect(page.locator("#document-sidebar")).toBeVisible();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+
+  const subscriptionCreated = await page.request.post("/api/rss/feeds", {
+    data: { feedUrl: "http://127.0.0.1:4199/feed.xml" }
+  });
+  expect(subscriptionCreated.ok()).toBeTruthy();
+  await page.reload();
+  await page.locator("#source-rss").click();
+
+  await page.locator('[data-rss-scope="inbox"]').click();
+  await expect(page.locator("#document-sidebar")).toBeHidden();
+  await expect(page.locator("#rss-list-panel")).toBeVisible();
+
+  await page.locator(".rss-entry-title").first().click();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+  await expect(page.locator(".reader-shell")).toBeVisible();
+  await expect(page.locator("#rss-article-back")).toBeVisible();
+
+  await page.locator("#rss-article-back").click();
+  await expect(page.locator("#rss-list-panel")).toBeVisible();
+  await expect(page.locator(".reader-shell")).toBeHidden();
+
+  await page.locator("#rss-list-back").click();
+  await expect(page.locator("#document-sidebar")).toBeVisible();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+});
+
+test("keeps desktop browsing and reading focused on the current task", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 950 });
+  await page.goto("/");
+  await page.locator("#source-rss").click();
+
+  const browseSidebar = await page.locator("#document-sidebar").boundingBox();
+  const browseList = await page.locator("#rss-list-panel").boundingBox();
+  expect(browseSidebar?.width).toBeLessThanOrEqual(280);
+  expect(browseList?.width).toBeGreaterThan(1500);
+  await expect(page.locator(".reader-shell")).toBeHidden();
+  await expect(page.locator("#ai-panel")).toBeHidden();
+
+  const subscriptionCreated = await page.request.post("/api/rss/feeds", {
+    data: { feedUrl: "http://127.0.0.1:4199/feed.xml" }
+  });
+  expect(subscriptionCreated.ok()).toBeTruthy();
+  await page.reload();
+  await page.locator("#source-rss").click();
+  await page.locator('[data-rss-scope="inbox"]').click();
+  await page.locator(".rss-entry-title").first().click();
+
+  await expect(page.locator("#document-sidebar")).toBeHidden();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+  const readingArea = await page.locator(".reader-shell").boundingBox();
+  const readingAi = await page.locator("#ai-panel").boundingBox();
+  expect(readingArea?.width).toBeGreaterThan(1400);
+  expect(readingAi?.width).toBeGreaterThanOrEqual(350);
+
+  await page.locator("#rss-article-back").click();
+  await page.locator("#source-local").click();
+  await expect(page.locator("#rss-list-panel")).toBeHidden();
+  await expect(page.locator("#document-sidebar")).toBeVisible();
+  await expect(page.locator(".reader-shell")).toBeVisible();
+  await expect(page.locator("#ai-panel")).toBeVisible();
 });

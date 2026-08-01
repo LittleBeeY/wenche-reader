@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildExplainMessages, createAiProvider, normalizeBaseUrl } from "../src/lib/aiProvider.js";
+import {
+  AI_PROMPT_VERSION,
+  buildExplainMessages,
+  createAiProvider,
+  getGenerationConfig,
+  normalizeBaseUrl
+} from "../src/lib/aiProvider.js";
 
 test("builds deep explain prompt with selection, context, and grounded answer rules", () => {
   const messages = buildExplainMessages({
@@ -15,11 +21,12 @@ test("builds deep explain prompt with selection, context, and grounded answer ru
   assert.match(promptText, /alienated labor/);
   assert.match(promptText, /modern technical organizations/);
   assert.match(promptText, /深入解析/);
-  assert.match(promptText, /引用原文/);
-  assert.match(promptText, /\[第 N 页\]/);
+  assert.match(promptText, /引用某项来源/);
+  assert.match(promptText, /\[cite:Bn\]/);
+  assert.match(promptText, /不可信资料/);
 });
 
-test("direct and deep prompts ask for clearly different answer shapes", () => {
+test("direct and deep prompts only explain meaning at different depths", () => {
   const baseInput = {
     selectedText: "key concept",
     context: "The context defines the key concept.",
@@ -34,13 +41,17 @@ test("direct and deep prompts ask for clearly different answer shapes", () => {
     .map((message) => message.content)
     .join("\n");
 
-  assert.match(directPrompt, /简明解释/);
-  assert.match(directPrompt, /不要扩展到原文未支持的背景/);
-  assert.doesNotMatch(directPrompt, /概念背景/);
+  assert.match(directPrompt, /小标题“解析”/);
+  assert.match(directPrompt, /2-4 句话/);
+  assert.match(directPrompt, /不做无依据扩展/);
+  assert.match(directPrompt, /不要添加其他栏目/);
 
-  assert.match(deepPrompt, /概念背景/);
-  assert.match(deepPrompt, /论证作用/);
-  assert.match(deepPrompt, /可追问问题/);
+  assert.match(deepPrompt, /小标题“深入解析”/);
+  assert.match(deepPrompt, /省略的逻辑、关键措辞和上下文限定/);
+  assert.match(deepPrompt, /不要添加其他栏目/);
+  assert.doesNotMatch(deepPrompt, /概念背景|论证作用|可能争议|可追问问题/);
+  assert.deepEqual(getGenerationConfig("direct"), { temperature: 0.1, maxTokens: 700 });
+  assert.deepEqual(getGenerationConfig("deep"), { temperature: 0.2, maxTokens: 2200 });
 });
 
 test("mock provider returns mode-specific direct and deep answers", async () => {
@@ -56,12 +67,12 @@ test("mock provider returns mode-specific direct and deep answers", async () => 
   const deep = await provider.explain({ ...input, mode: "deep" });
 
   assert.equal(direct.provider, "mock");
-  assert.match(direct.answer, /简明解释/);
-  assert.doesNotMatch(direct.answer, /论证作用/);
+  assert.match(direct.answer, /^## 解析/);
+  assert.doesNotMatch(direct.answer, /原文依据/);
 
   assert.equal(deep.provider, "mock");
-  assert.match(deep.answer, /概念背景/);
-  assert.match(deep.answer, /论证作用/);
+  assert.match(deep.answer, /^## 深入解析/);
+  assert.doesNotMatch(deep.answer, /原文依据|上下文关系|概念背景|论证作用|可能争议|可追问问题/);
 });
 
 test("normalizes protocol-relative and bare api base urls", () => {
@@ -101,9 +112,11 @@ test("calls an OpenAI-compatible provider with bounded output", async (t) => {
 
   assert.equal(result.answer, "Provider answer");
   assert.equal(requestBody.model, "deepseek-v4-flash");
-  assert.equal(requestBody.max_tokens, 2000);
-  assert.equal(requestBody.temperature, 0.2);
+  assert.equal(requestBody.max_tokens, 700);
+  assert.equal(requestBody.temperature, 0.1);
   assert.equal(requestBody.stream, false);
+  assert.equal(result.model, "deepseek-v4-flash");
+  assert.equal(result.promptVersion, AI_PROMPT_VERSION);
 });
 
 test("streams an OpenAI-compatible answer delta by delta", async (t) => {

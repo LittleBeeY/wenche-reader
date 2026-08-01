@@ -587,9 +587,15 @@ test("streams an AI answer and persists page-aware source context", async (t) =>
     body: JSON.stringify({
       documentId: document.id,
       mode: "direct",
+      scope: "selection",
       selection: {
         text: "Second source",
         blockIds: [document.blocks[1].id],
+        anchors: [{
+          blockId: document.blocks[1].id,
+          startOffset: 0,
+          endOffset: 13
+        }],
         pageIndex: 2
       }
     })
@@ -603,8 +609,15 @@ test("streams an AI answer and persists page-aware source context", async (t) =>
   assert.match(completed.answer, /Second source/);
   assert.ok(Number.isInteger(completed.recordId));
   const refreshed = await (await fetch(`${baseUrl}/api/documents/${document.id}`)).json();
-  assert.match(refreshed.aiRecords[0].context, /\[第 3 页\]/);
-  assert.match(refreshed.aiRecords[0].context, /\[第 2 段\]/);
+  assert.match(refreshed.aiRecords[0].context, /\[source:B\d+ position=2/);
+  assert.equal(refreshed.aiRecords[0].scope, "selection");
+  assert.equal(refreshed.aiRecords[0].contextSources[1].pageIndex, 2);
+  assert.equal(refreshed.aiRecords[0].model, "mock");
+  assert.equal(refreshed.aiRecords[0].promptVersion, "reader-v3");
+  assert.equal(refreshed.aiRecords[0].selectionAnchors[0].startOffset, 0);
+  assert.ok(refreshed.aiRecords[0].inputTokens > 0);
+  assert.ok(refreshed.aiRecords[0].outputTokens > 0);
+  assert.ok(refreshed.aiRecords[0].latencyMs > 0);
 });
 
 test("explains the current page when block ids are provided without a text selection", async (t) => {
@@ -626,14 +639,19 @@ test("explains the current page when block ids are provided without a text selec
     body: JSON.stringify({
       documentId: uploaded.id,
       mode: "direct",
-      selection: { text: "Current page", blockIds: uploaded.blocks.map((block) => block.id) }
+      scope: "page",
+      selection: {
+        text: "",
+        blockIds: uploaded.blocks.map((block) => block.id),
+        pageIndex: 0
+      }
     })
   });
 
   assert.equal(explainResponse.status, 200);
   const explanation = await explainResponse.json();
-  assert.match(explanation.answer, /Current page/);
   assert.match(explanation.answer, /Page block one/);
+  assert.equal(explanation.scope, "page");
 });
 
 test("answers a custom question with document context when no text is selected", async (t) => {
@@ -864,4 +882,6 @@ test("backs up and restores documents and reading artifacts without secrets", as
   assert.equal(restored.annotations.length, 1);
   assert.equal(restored.aiRecords[0].saved, true);
   assert.equal(restored.aiRecords[0].savedTitle, "备份回答");
+  assert.equal(restored.aiRecords[0].promptVersion, "reader-v3");
+  assert.ok(restored.aiRecords[0].contextSources.length > 0);
 });

@@ -100,11 +100,13 @@ function parseAtom(root, feedUrl) {
 function normalizeEntry(entry, feedUrl) {
   const link = absolutizeUrl(entry.link, feedUrl);
   const canonicalUrl = link ? normalizeCanonicalUrl(link) : "";
+  const thumbnailUrl = absolutizeUrl(entry.thumbnailUrl, canonicalUrl || feedUrl);
   const rawText = stripHtml(entry.contentHtml || entry.summaryHtml);
   return {
     ...entry,
     link,
     canonicalUrl,
+    thumbnailUrl,
     title: entry.title.replace(/\s+/g, " ").trim() || "(无标题)",
     language: detectLanguage(rawText),
     estimatedReadMinutes: estimateReadMinutes(rawText),
@@ -209,17 +211,89 @@ function findRssThumbnail(item) {
     String(node.attrs?.type || "").startsWith("image/")
   );
   if (enclosure?.attrs?.url) return enclosure.attrs.url;
-  const html = childText(item, "encoded") || childText(item, "description") || "";
-  return html.match(/<img[^>]+\bsrc=["']([^"']+)["']/i)?.[1] || "";
+  return (
+    selectCoverImage(childText(item, "encoded")) ||
+    selectCoverImage(childText(item, "description"))
+  );
 }
 
 function findAtomThumbnail(entry) {
   const link = findChildren(entry, "link").find((node) =>
-    ["enclosure", "icon"].includes(node.attrs?.rel) && String(node.attrs?.type || "").startsWith("image/")
+    node.attrs?.rel === "enclosure" && String(node.attrs?.type || "").startsWith("image/")
   );
   if (link?.attrs?.href) return link.attrs.href;
-  const html = childText(entry, "content") || childText(entry, "summary") || "";
-  return html.match(/<img[^>]+\bsrc=["']([^"']+)["']/i)?.[1] || "";
+  return (
+    selectCoverImage(childText(entry, "content")) ||
+    selectCoverImage(childText(entry, "summary"))
+  );
+}
+
+export function selectCoverImage(html) {
+  const candidates = [];
+  const imagePattern = /<img\b[^>]*>/gi;
+  let match;
+  let index = 0;
+  while ((match = imagePattern.exec(String(html || "")))) {
+    const { attrs } = parseTag(match[0].slice(1, -1));
+    const srcset = attrs.srcset || attrs["data-srcset"] || "";
+    const srcsetUrl = srcset
+      .split(",")
+      .map((part) => part.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .at(-1);
+    const url =
+      attrs["data-src"] ||
+      attrs["data-original"] ||
+      attrs["data-lazy-src"] ||
+      attrs.src ||
+      srcsetUrl ||
+      "";
+    const marker = [
+      url,
+      attrs.alt,
+      attrs.class,
+      attrs.id
+    ].filter(Boolean).join(" ").toLowerCase();
+    const width = imageDimension(attrs.width, attrs.style, "width");
+    const height = imageDimension(attrs.height, attrs.style, "height");
+
+    if (
+      !url ||
+      /^(data|blob):/i.test(url) ||
+      /\.svg(?:\?|$)/i.test(url) ||
+      /\b(avatar|author|profile|headimg|logo|icon|emoji|sprite|spacer|pixel|tracking|qrcode|qr-code|qr_code)\b/i.test(marker) ||
+      width > 0 && height > 0 && (width <= 80 || height <= 60)
+    ) {
+      index += 1;
+      continue;
+    }
+
+    let score = 1000 - index * 5;
+    if (/\b(hero|cover|banner|featured|lead|main|post-image|article-image)\b/i.test(marker)) {
+      score += 500;
+    }
+    if (width > 0 && height > 0) {
+      score += Math.min(500, (width * height) / 1000);
+      const ratio = width / height;
+      if (ratio >= 1.3 && ratio <= 2.4) score += 280;
+      else if (ratio < 0.75 || ratio > 3.2) score -= 160;
+    } else if (width >= 480) {
+      score += 180;
+    }
+    candidates.push({ url, score });
+    index += 1;
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.url || "";
+}
+
+function imageDimension(value, style, property) {
+  const direct = Number.parseFloat(String(value || ""));
+  if (Number.isFinite(direct)) return direct;
+  const matched = String(style || "").match(
+    new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*(\\d+(?:\\.\\d+)?)px`, "i")
+  );
+  return matched ? Number.parseFloat(matched[1]) : 0;
 }
 
 // ---------- 安全 XML 解析 ----------

@@ -1,0 +1,34 @@
+[
+  {
+    "name": "中文概念检索",
+    "question": "文章如何解释光合作用？",
+    "expectedBlockId": 3,
+    "blocks": [
+      { "id": 1, "position": 0, "type": "heading", "text": "植物基础", "html": "<h1>植物基础</h1>" },
+      { "id": 2, "position": 1, "type": "paragraph", "text": "植物需要水和适宜温度。" },
+      { "id": 3, "position": 2, "type": "paragraph", "text": "光合作用把光能转化为化学能。" },
+      { "id": 4, "position": 3, "type": "paragraph", "text": "呼吸作用会释放能量。" }
+    ]
+  },
+  {
+    "name": "英文术语检索",
+    "question": "What does dependency injection achieve?",
+    "expectedBlockId": 12,
+    "blocks": [
+      { "id": 11, "position": 0, "type": "paragraph", "text": "The module starts the web server." },
+      { "id": 12, "position": 1, "type": "paragraph", "text": "Dependency injection separates construction from behavior." },
+      { "id": 13, "position": 2, "type": "paragraph", "text": "The process exits after shutdown." }
+    ]
+  },
+  {
+    "name": "章节边界检索",
+    "question": "作者如何界定可观测性？",
+    "expectedBlockId": 23,
+    "blocks": [
+      { "id": 21, "position": 0, "type": "heading", "text": "可靠性", "html": "<h1>可靠性</h1>" },
+      { "id": 22, "position": 1, "type": "heading", "text": "可观测性", "html": "<h2>可观测性</h2>" },
+      { "id": 23, "position": 2, "type": "paragraph", "text": "可观测性是从系统输出推断内部状态的能力。" },
+      { "id": 24, "position": 3, "type": "heading", "text": "容量规划", "html": "<h2>容量规划</h2>" }
+    ]
+  }
+]

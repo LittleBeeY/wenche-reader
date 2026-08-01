@@ -4,15 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="文澈阅读，本地优先的 AI 深度阅读器" />
+    <meta name="theme-color" content="#dfecef" />
     <title>文澈阅读</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/design-refresh.css" />
   </head>
   <body>
     <main class="app-shell" id="app-shell">
       <aside class="sidebar" id="document-sidebar">
         <div class="brand">
           <div class="brand-mark">澈</div>
-          <div>
+          <div class="brand-copy">
             <h1>文澈阅读</h1>
             <p>AI 深度阅读器</p>
           </div>
@@ -20,16 +22,41 @@
             id="toggle-document-sidebar"
             class="aside-toggle"
             type="button"
-            title="收起文档栏"
-            aria-label="收起文档栏"
+            title="收起导航栏"
+            aria-label="收起导航栏"
             aria-controls="document-sidebar"
             aria-expanded="true"
           ><span aria-hidden="true">‹</span></button>
         </div>
 
         <div class="library-source-switch" role="tablist" aria-label="内容来源">
-          <button id="source-local" type="button" role="tab" aria-selected="true" data-active="true">本地文档</button>
-          <button id="source-rss" type="button" role="tab" aria-selected="false">资讯</button>
+          <button
+            id="source-local"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-active="true"
+            title="本地文档"
+          >
+            <svg class="source-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 3.75h7l3 3v13.5H7z"></path>
+              <path d="M14 3.75v3h3M9.75 11h4.5M9.75 14.5h4.5"></path>
+            </svg>
+            <span class="source-nav-label">本地文档</span>
+          </button>
+          <button
+            id="source-rss"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            title="资讯"
+          >
+            <svg class="source-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="6.25" cy="17.75" r="1.25"></circle>
+              <path d="M5 11.5a7.5 7.5 0 0 1 7.5 7.5M5 6a13 13 0 0 1 13 13"></path>
+            </svg>
+            <span class="source-nav-label">资讯</span>
+          </button>
         </div>
 
         <nav id="rss-nav" class="rss-nav" aria-label="资讯导航" hidden>
@@ -40,18 +67,26 @@
             <button type="button" data-rss-scope="later" class="rss-nav-item">稍后读</button>
             <button type="button" data-rss-scope="starred" class="rss-nav-item">收藏</button>
           </div>
-          <div class="rss-nav-section">
+          <details id="rss-subscriptions-disclosure" class="rss-nav-disclosure">
+            <summary>
+              <span>订阅源</span>
+              <span id="rss-subscriptions-count" class="rss-nav-count">0</span>
+            </summary>
             <div class="rss-nav-heading-row">
-              <span class="rss-nav-heading">订阅</span>
+              <span class="rss-nav-hint">按资料夹收纳</span>
               <button id="rss-nav-add" type="button" class="rss-nav-mini" title="添加订阅" aria-label="添加订阅">＋</button>
             </div>
             <div id="rss-feed-tree" class="rss-feed-tree"></div>
-          </div>
-          <div class="rss-nav-section">
-            <span class="rss-nav-heading">管理</span>
-            <button id="rss-nav-manage" type="button" class="rss-nav-item">管理订阅源</button>
-            <button id="rss-nav-opml" type="button" class="rss-nav-item">导入 / 导出 OPML</button>
-          </div>
+          </details>
+          <details id="rss-management-disclosure" class="rss-nav-disclosure">
+            <summary>
+              <span>订阅管理</span>
+            </summary>
+            <div class="rss-nav-section">
+              <button id="rss-nav-manage" type="button" class="rss-nav-item">管理订阅源</button>
+              <button id="rss-nav-opml" type="button" class="rss-nav-item">导入 / 导出订阅源</button>
+            </div>
+          </details>
           <div class="rss-nav-footer">
             <span id="rss-last-updated" class="rss-last-updated" title="上次更新时间"></span>
             <button id="rss-refresh-all" type="button" class="rss-nav-mini" title="立即刷新" aria-label="立即刷新">⟳ 刷新</button>
@@ -70,75 +105,91 @@
           <span class="upload-types">可一次选择多个文件</span>
         </label>
 
-        <details class="sidebar-disclosure import-disclosure local-only">
+        <details id="local-library-disclosure" class="sidebar-disclosure local-library-disclosure local-only" open>
           <summary>
-            <span>导入位置（可选）</span>
+            <span>文档库</span>
+            <span id="local-document-count" class="sidebar-summary-count">0</span>
           </summary>
-          <div class="sidebar-disclosure-body import-options">
-            <label>
-              <span>保存到文件夹</span>
-              <input id="category-input" type="text" list="category-options" maxlength="80" placeholder="默认：无文件夹" />
-            </label>
-            <datalist id="category-options"></datalist>
-          </div>
+          <nav class="document-list" aria-label="文档列表">
+            <div class="document-list-toolbar">
+              <input id="document-search" class="document-search" type="search" placeholder="搜索文档" aria-label="搜索文档" />
+              <label class="document-sort-control">
+                <span class="visually-hidden">排序方式</span>
+                <select id="document-sort" aria-label="文章排序">
+                  <option value="filename">文件名</option>
+                  <option value="title">标题</option>
+                  <option value="import">添加时间</option>
+                </select>
+              </label>
+            </div>
+            <details id="local-library-filters" class="library-filters">
+              <summary>筛选文件夹</summary>
+              <div id="archive-list" class="archive-list" aria-label="按文件夹筛选"></div>
+            </details>
+            <div id="document-list"></div>
+          </nav>
         </details>
 
-        <nav class="document-list local-only" aria-label="文档列表">
-          <div class="document-list-toolbar">
-            <span class="document-list-title">文档列表</span>
-            <label class="document-sort-control">
-              <span class="visually-hidden">排序方式</span>
-              <select id="document-sort" aria-label="文章排序">
-                <option value="filename">按文件名</option>
-                <option value="title">按标题</option>
-                <option value="import">按添加时间</option>
-              </select>
-            </label>
-          </div>
-          <input id="document-search" class="document-search" type="search" placeholder="搜索文档或文件夹" aria-label="搜索文档" />
-          <div id="archive-list" class="archive-list" aria-label="按文件夹筛选"></div>
-          <div id="document-list"></div>
-        </nav>
-
-        <details id="library-organize" class="sidebar-disclosure organize-disclosure local-only">
-          <summary>
-            <span>管理文档</span>
+        <details id="sidebar-more" class="sidebar-more local-only">
+          <summary title="更多侧栏工具">
+            <span class="sidebar-more-icon" aria-hidden="true">•••</span>
+            <span class="sidebar-more-label">更多</span>
           </summary>
-          <div class="sidebar-disclosure-body">
-            <span class="organize-section-title">选择文档</span>
-            <div class="document-list-actions">
-              <button id="select-visible" type="button" disabled>选择当前列表</button>
-              <button id="delete-selected" type="button" disabled>批量删除</button>
-            </div>
-            <span class="organize-section-title">移动或管理文件夹</span>
-            <div class="batch-archive-controls">
-              <select id="archive-category" aria-label="目标文件夹">
-                <option value="">移动到文件夹…</option>
-                <option value="未分类">无文件夹</option>
-              </select>
-              <button id="archive-selected" type="button" disabled>移动</button>
-            </div>
-            <div class="archive-manage-actions">
-              <button id="rename-archive" type="button" disabled>重命名文件夹</button>
-              <button id="delete-archive" type="button" disabled>删除文件夹</button>
-            </div>
-            <span class="organize-section-title">新建文件夹</span>
-            <div class="archive-create-controls">
-              <input id="new-archive-name" type="text" maxlength="80" placeholder="输入文件夹名称" aria-label="新文件夹名称" />
-              <button id="create-archive" type="button" disabled>创建</button>
-            </div>
-            <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
-          </div>
-        </details>
+          <div class="sidebar-more-menu">
+            <details class="sidebar-disclosure import-disclosure">
+              <summary>
+                <span>导入位置</span>
+              </summary>
+              <div class="sidebar-disclosure-body import-options">
+                <label>
+                  <span>保存到文件夹（可选）</span>
+                  <input id="category-input" type="text" list="category-options" maxlength="80" placeholder="默认：无文件夹" />
+                </label>
+                <datalist id="category-options"></datalist>
+              </div>
+            </details>
 
-        <details class="sidebar-disclosure data-tools local-only" aria-label="本地数据">
-          <summary>
-            <span>备份与恢复</span>
-          </summary>
-          <div class="sidebar-disclosure-body">
-            <button id="download-backup" type="button">下载备份</button>
-            <label class="restore-button" for="restore-backup">从备份恢复</label>
-            <input id="restore-backup" type="file" accept="application/json,.json" />
+            <details id="library-organize" class="sidebar-disclosure organize-disclosure">
+              <summary>
+                <span>管理文档</span>
+              </summary>
+              <div class="sidebar-disclosure-body">
+                <span class="organize-section-title">选择文档</span>
+                <div class="document-list-actions">
+                  <button id="select-visible" type="button" disabled>选择当前列表</button>
+                  <button id="delete-selected" type="button" disabled>批量删除</button>
+                </div>
+                <span class="organize-section-title">移动或管理文件夹</span>
+                <div class="batch-archive-controls">
+                  <select id="archive-category" aria-label="目标文件夹">
+                    <option value="">移动到文件夹…</option>
+                    <option value="未分类">无文件夹</option>
+                  </select>
+                  <button id="archive-selected" type="button" disabled>移动</button>
+                </div>
+                <div class="archive-manage-actions">
+                  <button id="rename-archive" type="button" disabled>重命名文件夹</button>
+                  <button id="delete-archive" type="button" disabled>删除文件夹</button>
+                </div>
+                <span class="organize-section-title">新建文件夹</span>
+                <div class="archive-create-controls">
+                  <input id="new-archive-name" type="text" maxlength="80" placeholder="输入文件夹名称" aria-label="新文件夹名称" />
+                  <button id="create-archive" type="button" disabled>创建</button>
+                </div>
+                <div id="archive-status" class="archive-status" role="status" aria-live="polite"></div>
+              </div>
+            </details>
+
+            <details class="sidebar-disclosure data-tools" aria-label="本地数据">
+              <summary>
+                <span>备份与恢复</span>
+              </summary>
+              <div class="sidebar-disclosure-body">
+                <button id="download-backup" type="button">下载备份</button>
+                <label class="restore-button" for="restore-backup">从备份恢复</label>
+                <input id="restore-backup" type="file" accept="application/json,.json" />
+              </div>
+            </details>
           </div>
         </details>
       </aside>
@@ -177,22 +228,23 @@
       </section>
 
       <section class="reader-shell">
-        <div id="rss-article-bar" class="rss-article-bar" hidden>
-          <div class="rss-article-meta" id="rss-article-meta"></div>
-          <div class="rss-article-actions">
-            <button type="button" data-rss-action="unread" title="标记未读" aria-label="标记未读">✉</button>
-            <button type="button" data-rss-action="star" title="收藏" aria-label="收藏">☆</button>
-            <button type="button" data-rss-action="later" title="稍后读" aria-label="稍后读">🕑</button>
-            <button type="button" data-rss-action="hide" title="不感兴趣" aria-label="不感兴趣">⊘</button>
-            <button type="button" data-rss-action="extract" title="提取全文" aria-label="提取全文">⤓</button>
-            <button type="button" data-rss-action="save" title="保存到文档" aria-label="保存到文档">⇥</button>
-            <a id="rss-article-origin" href="#" target="_blank" rel="noopener noreferrer" title="打开原文" aria-label="打开原文">↗</a>
-          </div>
-        </div>
         <div class="reader-toolbar">
-          <div>
+          <div id="rss-article-bar" class="rss-article-bar" hidden>
+            <button id="rss-article-back" type="button" class="rss-article-back" title="返回资讯列表" aria-label="返回资讯列表">‹</button>
+            <div class="rss-article-actions" role="group" aria-label="文章操作">
+              <button type="button" data-rss-action="unread" title="标记未读" aria-label="标记未读">✉</button>
+              <button type="button" data-rss-action="star" title="收藏文章" aria-label="收藏文章">☆</button>
+              <button type="button" data-rss-action="later" title="稍后读" aria-label="稍后读">🕑</button>
+              <button type="button" data-rss-action="hide" title="不感兴趣" aria-label="不感兴趣">⊘</button>
+              <button type="button" data-rss-action="extract" title="提取全文" aria-label="提取全文">⤓</button>
+              <button type="button" data-rss-action="save" title="保存到文档" aria-label="保存到文档">⇥</button>
+              <a id="rss-article-origin" href="#" target="_blank" rel="noopener noreferrer" title="打开原文" aria-label="打开原文">↗</a>
+            </div>
+          </div>
+          <div class="reader-heading">
             <span class="section-label">阅读中</span>
             <h2 id="reader-title">上传一篇文章开始阅读</h2>
+            <div class="rss-article-meta" id="rss-article-meta"></div>
           </div>
           <div class="reader-search" role="search">
             <input id="reader-search-input" type="search" placeholder="搜索当前文章" aria-label="搜索当前文章" />
@@ -260,11 +312,12 @@
       </section>
 
       <aside class="ai-panel" id="ai-panel">
-        <div class="ai-header">
+        <div class="ai-header" title="拖动移动解析面板">
           <div class="ai-header-copy">
             <span class="section-label">AI 助手</span>
             <h2>解析面板</h2>
           </div>
+          <span class="ai-drag-grip" aria-hidden="true">⠿</span>
           <button
             id="toggle-ai-panel"
             class="aside-toggle"
@@ -284,30 +337,52 @@
         <div id="analysis-view" class="ai-view">
           <div id="ai-status" class="ai-status">正在检查 AI 接口</div>
 
-          <div class="quick-actions" aria-label="快速解析">
-            <button id="explain-page" type="button">解析当前页</button>
-            <button id="deep-page" type="button">深入解析当前页</button>
-          </div>
-
-          <div class="quick-actions rss-quick-actions" id="rss-quick-actions" aria-label="资讯快捷解析" hidden>
-            <button type="button" data-rss-ai="judge">帮我判断是否值得深读</button>
-            <button type="button" data-rss-ai="summary">生成结构化摘要</button>
-            <button type="button" data-rss-ai="points">提取观点与证据</button>
-          </div>
+          <details class="ai-disclosure" id="ai-quick-tools">
+            <summary>
+              <span>快捷解析</span>
+              <small>按需展开</small>
+            </summary>
+            <div class="ai-disclosure-body ai-quick-action-grid" aria-label="快捷解析">
+              <button id="explain-page" type="button">解析当前页</button>
+              <button id="deep-page" type="button">深入解析当前页</button>
+              <div class="rss-quick-actions" id="rss-quick-actions" aria-label="资讯快捷解析" hidden>
+                <button type="button" data-rss-ai="judge">判断是否值得深读</button>
+                <button type="button" data-rss-ai="summary">生成结构化摘要</button>
+                <button type="button" data-rss-ai="points">提取观点与证据</button>
+              </div>
+            </div>
+          </details>
 
           <div class="question-box">
-            <textarea id="question-input" rows="4" placeholder="围绕选区或全文提问…"></textarea>
+            <label class="ai-scope-field" for="ai-scope">
+              <span>回答范围</span>
+              <select id="ai-scope">
+                <option value="selection" disabled>选中文字</option>
+                <option value="page">当前页</option>
+                <option value="section">当前章节</option>
+                <option value="document" selected>全文</option>
+              </select>
+            </label>
+            <textarea id="question-input" rows="3" placeholder="输入你想追问的问题…"></textarea>
             <div class="question-actions">
               <button id="ask-button" type="button">提问</button>
               <button id="cancel-ai" type="button" hidden>取消解析</button>
             </div>
           </div>
 
-          <div class="answer-toolbar">
-            <span>解析记录</span>
-            <button id="history-toggle" type="button" hidden>查看全部</button>
-          </div>
-          <div id="answer-list" class="answer-list"></div>
+          <details class="ai-disclosure answer-history" id="answer-history">
+            <summary>
+              <span>解析记录</span>
+              <small><span id="answer-count">0</span> 条</small>
+            </summary>
+            <div class="answer-history-body">
+              <div class="answer-toolbar">
+                <span id="answer-summary">暂无记录</span>
+                <button id="history-toggle" type="button" hidden>查看全部</button>
+              </div>
+              <div id="answer-list" class="answer-list"></div>
+            </div>
+          </details>
         </div>
 
         <div id="knowledge-view" class="ai-view" hidden>
@@ -324,6 +399,14 @@
             <div id="knowledge-list" class="knowledge-list"></div>
           </section>
         </div>
+        <div
+          id="ai-panel-resize"
+          class="ai-panel-resize"
+          role="separator"
+          aria-label="拖动调整解析面板大小"
+          title="拖动调整解析面板大小"
+          tabindex="0"
+        ></div>
       </aside>
     </main>
 
@@ -346,7 +429,7 @@
 
     <dialog id="rss-opml-dialog" class="rss-dialog">
       <form method="dialog">
-        <h2>导入 / 导出 OPML</h2>
+        <h2>导入 / 导出订阅源</h2>
         <div class="rss-opml-actions">
           <label class="restore-button" for="rss-opml-file">选择 OPML 文件</label>
           <input id="rss-opml-file" type="file" accept=".opml,.xml,text/xml" />

@@ -57,6 +57,9 @@ test("classifies ipv4 and ipv6 addresses", () => {
   assert.equal(isPrivateIP("172.31.255.1"), true);
   assert.equal(isPrivateIP("192.168.0.1"), true);
   assert.equal(isPrivateIP("100.64.0.1"), true);
+  assert.equal(isPrivateIP("192.0.0.1"), true);
+  assert.equal(isPrivateIP("192.0.2.1"), true);
+  assert.equal(isPrivateIP("192.0.66.2"), false);
   assert.equal(isPrivateIP("224.0.0.1"), true);
   assert.equal(isPrivateIP("8.8.8.8"), false);
   assert.equal(isPrivateIP("1.1.1.1"), false);
@@ -93,6 +96,19 @@ test("safe lookup blocks private resolutions at connection time", async () => {
     permissive("localhost", {}, (error, address) => {
       if (error) return reject(error);
       assert.ok(address);
+      resolve();
+    });
+  });
+});
+
+test("safe lookup returns an address array when Node requests all results", async () => {
+  const lookup = createSafeLookup();
+  await new Promise((resolve, reject) => {
+    lookup("8.8.8.8", { all: true }, (error, addresses) => {
+      if (error) return reject(error);
+      assert.ok(Array.isArray(addresses));
+      assert.ok(addresses.length > 0);
+      assert.ok(addresses.every((entry) => entry.address && entry.family));
       resolve();
     });
   });

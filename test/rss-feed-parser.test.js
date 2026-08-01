@@ -8,6 +8,7 @@ import {
   normalizeCanonicalUrl,
   parseDate,
   parseFeed,
+  selectCoverImage,
   stripHtml
 } from "../src/lib/rss/feedParser.js";
 
@@ -142,4 +143,37 @@ test("detects language and estimates reading time", () => {
 test("strips html for search and AI context", () => {
   assert.equal(stripHtml("<p>Hello <strong>world</strong></p><p>第二段</p>"), "Hello world\n第二段");
   assert.equal(stripHtml("<script>alert(1)</script><p>safe</p>"), "safe");
+});
+
+test("resolves relative article and thumbnail urls against the feed", () => {
+  const parsed = parseFeed(`<?xml version="1.0"?>
+    <rss version="2.0"><channel><title>Relative</title>
+      <item>
+        <guid>relative-1</guid>
+        <title>Relative entry</title>
+        <link>/posts/1</link>
+        <description><![CDATA[<p>Summary</p><img src="/images/cover.jpg">]]></description>
+      </item>
+    </channel></rss>`, { feedUrl: "https://example.com/news/feed.xml" });
+
+  assert.equal(parsed.entries[0].canonicalUrl, "https://example.com/posts/1");
+  assert.equal(parsed.entries[0].thumbnailUrl, "https://example.com/images/cover.jpg");
+});
+
+test("selects a large article cover instead of avatars, logos, or tracking pixels", () => {
+  const html = `
+    <img class="author-avatar" src="/avatar.jpg" width="96" height="96">
+    <img src="/tracking.gif" width="1" height="1">
+    <img class="article-image" data-src="/cover.webp" width="960" height="540">
+    <img src="/portrait.jpg" width="600" height="900">
+  `;
+  assert.equal(selectCoverImage(html), "/cover.webp");
+});
+
+test("supports lazy srcsets and ignores decorative svg images", () => {
+  const html = `
+    <img src="/brand.svg" alt="brand logo">
+    <img data-srcset="/small.jpg 320w, /wide.jpg 1280w" width="1280" height="720">
+  `;
+  assert.equal(selectCoverImage(html), "/wide.jpg");
 });

@@ -1,13 +1,20 @@
 const LAST_DOCUMENT_KEY = "ai-reader:last-document";
 const PAGE_KEY_PREFIX = "ai-reader:page:";
 
-export function saveReadingProgress(storage, documentId, pageIndex) {
+export function saveReadingProgress(
+  storage,
+  documentId,
+  pageIndex,
+  { rememberDocument = true } = {}
+) {
   const normalizedDocumentId = toNonNegativeInteger(documentId);
   const normalizedPageIndex = toNonNegativeInteger(pageIndex);
   if (!storage || normalizedDocumentId === null || normalizedPageIndex === null) return;
 
   try {
-    storage.setItem(LAST_DOCUMENT_KEY, normalizedDocumentId);
+    if (rememberDocument) {
+      storage.setItem(LAST_DOCUMENT_KEY, normalizedDocumentId);
+    }
     storage.setItem(`${PAGE_KEY_PREFIX}${normalizedDocumentId}`, normalizedPageIndex);
   } catch {
     // Reading still works when browser storage is disabled.

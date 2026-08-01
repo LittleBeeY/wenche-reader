@@ -17,12 +17,29 @@ import { findDocumentMatches } from "./documentSearch.js";
 import { formatAnswerMeta, getVisibleRecords } from "./historyView.js";
 import { renderMarkdown } from "./markdownView.js";
 import { consumeEventStream } from "./aiStream.js";
-import { resolveAnswerReferences } from "./answerReferences.js";
+import {
+  formatAnswerCitations,
+  resolveAnswerReferences
+} from "./answerReferences.js";
+import {
+  assignBlockIdsByText,
+  buildRangeAnchors,
+  findBlockIdsByText
+} from "./selectionAnchors.js";
 import {
   calculateSelectionMenuPosition,
   dismissSelectionUi
 } from "./selectionUi.js";
-import { loadPanelState, savePanelState } from "./panelState.js";
+import {
+  constrainFloatingLauncherPosition,
+  constrainFloatingPanelBounds,
+  loadFloatingLauncherPosition,
+  loadFloatingPanelBounds,
+  loadPanelState,
+  saveFloatingLauncherPosition,
+  saveFloatingPanelBounds,
+  savePanelState
+} from "./panelState.js";
 import {
   createDocxPreview,
   isDocxDocument,
@@ -35,11 +52,14 @@ import {
   normalizeReadingSettings,
   saveReadingSettings
 } from "./readingSettings.js";
+import { bindDisclosureState } from "./disclosureState.js";
 import { initRssMode } from "./rssView.js";
 
 const state = {
   document: null,
+  documentContext: null,
   documents: [],
+  lastLocalDocumentId: null,
   sourceMode: "local",
   pages: [],
   docxPreview: null,
@@ -49,7 +69,7 @@ const state = {
   sortMode: "filename",
   searchQuery: "",
   selectedDocumentIds: new Set(),
-  selection: { text: "", blockIds: [] },
+  selection: { text: "", blockIds: [], anchors: [] },
   readerQuery: "",
   searchMatches: [],
   searchMatchIndex: -1,
@@ -62,12 +82,23 @@ const state = {
   aiController: null,
   busy: false,
   immersive: false,
-  panels: loadPanelState(window.localStorage),
+  panels: loadPanelState(window.localStorage, {
+    rightCollapsedDefault: window.innerWidth <= 760
+  }),
+  floatingAiPanelBounds: loadFloatingPanelBounds(window.localStorage),
+  floatingAiLauncherPosition: loadFloatingLauncherPosition(window.localStorage),
   readingSettings: loadReadingSettings(window.localStorage)
 };
 
+if (window.innerWidth <= 760) {
+  state.panels.rightCollapsed = true;
+}
+
 const appShell = document.querySelector("#app-shell");
 const documentSidebar = document.querySelector("#document-sidebar");
+const aiPanel = document.querySelector("#ai-panel");
+const aiPanelHeader = aiPanel.querySelector(".ai-header");
+const aiPanelResize = document.querySelector("#ai-panel-resize");
 const documentSidebarToggle = document.querySelector("#toggle-document-sidebar");
 const aiPanelToggle = document.querySelector("#toggle-ai-panel");
 const fileInput = document.querySelector("#file-input");
@@ -76,6 +107,9 @@ const documentSort = document.querySelector("#document-sort");
 const reader = document.querySelector("#reader");
 const readerTitle = document.querySelector("#reader-title");
 const documentList = document.querySelector("#document-list");
+const localLibraryDisclosure = document.querySelector("#local-library-disclosure");
+const localLibraryFilters = document.querySelector("#local-library-filters");
+const localDocumentCount = document.querySelector("#local-document-count");
 const documentSearch = document.querySelector("#document-search");
 const selectVisibleButton = document.querySelector("#select-visible");
 const deleteSelectedButton = document.querySelector("#delete-selected");
@@ -89,9 +123,12 @@ const archiveList = document.querySelector("#archive-list");
 const renameArchiveButton = document.querySelector("#rename-archive");
 const deleteArchiveButton = document.querySelector("#delete-archive");
 const libraryOrganize = document.querySelector("#library-organize");
+const sidebarMore = document.querySelector("#sidebar-more");
+const sidebarMoreSummary = sidebarMore.querySelector(":scope > summary");
 const statusEl = document.querySelector("#status");
 const selectionMenu = document.querySelector("#selection-menu");
 const questionInput = document.querySelector("#question-input");
+const aiScopeSelect = document.querySelector("#ai-scope");
 const askButton = document.querySelector("#ask-button");
 const answerList = document.querySelector("#answer-list");
 const prevPageButton = document.querySelector("#prev-page");
@@ -106,6 +143,9 @@ const nextMatchButton = document.querySelector("#next-match");
 const matchIndicator = document.querySelector("#match-indicator");
 const cancelAiButton = document.querySelector("#cancel-ai");
 const historyToggleButton = document.querySelector("#history-toggle");
+const answerHistory = document.querySelector("#answer-history");
+const answerCount = document.querySelector("#answer-count");
+const answerSummary = document.querySelector("#answer-summary");
 const bookmarkPageButton = document.querySelector("#bookmark-page");
 const analysisTab = document.querySelector("#analysis-tab");
 const knowledgeTab = document.querySelector("#knowledge-tab");
@@ -131,13 +171,29 @@ const exitImmersiveButton = document.querySelector("#exit-immersive");
 const sourceLocalButton = document.querySelector("#source-local");
 const sourceRssButton = document.querySelector("#source-rss");
 
+bindDisclosureState(localLibraryDisclosure, "local-library", { defaultOpen: true });
+bindDisclosureState(localLibraryFilters, "local-library-filters");
+
 let rssController = null;
+let aiPanelGesture = null;
+let suppressAiPanelToggleClick = false;
+let wasNarrowViewport = window.innerWidth <= 760;
 const rssHost = {
-  openDocument: (documentId) => loadDocument(documentId, 0),
-  reloadCurrentDocument: () => (state.document ? loadDocument(state.document.id, "saved") : Promise.resolve()),
+  openDocument: (documentId) =>
+    loadDocument(documentId, 0, { rememberAsLocal: false }),
+  reloadCurrentDocument: () =>
+    state.document
+      ? loadDocument(state.document.id, "saved", { rememberAsLocal: false })
+      : Promise.resolve(),
   setStatus,
   getCurrentDocument: () => state.document,
   refreshDocuments: () => loadDocumentList(),
+  collapseAiPanel: () => {
+    if (!state.panels.rightCollapsed) {
+      state.panels.rightCollapsed = true;
+      renderPanelState();
+    }
+  },
   askQuestion: (question) => {
     questionInput.value = question;
     if (state.panels.rightCollapsed) {
@@ -148,7 +204,7 @@ const rssHost = {
   }
 };
 
-function setSourceMode(mode) {
+async function setSourceMode(mode) {
   if (state.sourceMode === mode) return;
   state.sourceMode = mode;
   const isRss = mode === "rss";
@@ -158,29 +214,57 @@ function setSourceMode(mode) {
   sourceRssButton.setAttribute("aria-selected", String(isRss));
   appShell.classList.toggle("rss-mode", isRss);
   if (isRss) {
+    sidebarMore.open = false;
     rssController ??= initRssMode(rssHost);
-    rssController.activate();
+    await rssController.activate();
     rssController.onDocumentLoaded(state.document);
   } else {
     rssController?.deactivate();
+    if (state.documentContext === "rss") {
+      await restoreLocalDocumentContext();
+    }
   }
   try {
     window.localStorage.setItem("wenche.sourceMode", mode);
   } catch {}
 }
 
-sourceLocalButton.addEventListener("click", () => setSourceMode("local"));
-sourceRssButton.addEventListener("click", () => setSourceMode("rss"));
+sourceLocalButton.addEventListener("click", () => {
+  void setSourceMode("local");
+});
+sourceRssButton.addEventListener("click", () => {
+  void setSourceMode("rss");
+});
 
 documentSidebarToggle.addEventListener("click", () => {
   state.panels.leftCollapsed = !state.panels.leftCollapsed;
   renderPanelState();
 });
 
+sidebarMoreSummary.addEventListener("click", (event) => {
+  if (!state.panels.leftCollapsed) return;
+  event.preventDefault();
+  state.panels.leftCollapsed = false;
+  renderPanelState();
+  sidebarMore.open = true;
+});
+
+document.addEventListener("click", (event) => {
+  if (sidebarMore.open && !sidebarMore.contains(event.target)) {
+    sidebarMore.open = false;
+  }
+});
+
 aiPanelToggle.addEventListener("click", () => {
+  if (suppressAiPanelToggleClick) {
+    suppressAiPanelToggleClick = false;
+    return;
+  }
   state.panels.rightCollapsed = !state.panels.rightCollapsed;
   renderPanelState();
 });
+
+setupFloatingAiPanel();
 
 libraryOrganize.addEventListener("toggle", () => {
   documentSidebar.classList.toggle("is-organizing", libraryOrganize.open);
@@ -216,17 +300,39 @@ reader.addEventListener("click", (event) => {
 reader.addEventListener("scroll", syncDocxPageFromScroll);
 
 window.addEventListener("resize", () => {
+  const isNarrowViewport = window.innerWidth <= 760;
+  if (isNarrowViewport && !wasNarrowViewport && !state.panels.rightCollapsed) {
+    state.panels.rightCollapsed = true;
+    renderPanelState();
+  }
+  wasNarrowViewport = isNarrowViewport;
+  fitFloatingAiPanelToViewport();
+  fitFloatingAiLauncherToViewport();
+  applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
+  applyDocxReadingScale();
+});
+
+appShell.addEventListener("transitionend", (event) => {
+  if (event.target !== appShell || event.propertyName !== "grid-template-columns") return;
   applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
   applyDocxReadingScale();
 });
 
 document.addEventListener("mousedown", (event) => {
   if (!selectionMenu.contains(event.target)) {
+    const preserveSelection = aiPanel.contains(event.target);
     dismissSelectionUi({
       menu: selectionMenu,
       browserSelection: window.getSelection(),
-      state
+      state,
+      preserveSelection
     });
+    if (!preserveSelection && aiScopeSelect.value === "selection") {
+      aiScopeSelect.value = "document";
+    }
+    if (!preserveSelection) {
+      aiScopeSelect.querySelector("[value='selection']").disabled = true;
+    }
     state.activeAnnotationId = null;
     selectionMenu.dataset.mode = "selection";
   }
@@ -253,6 +359,7 @@ selectionMenu.addEventListener("click", async (event) => {
     return;
   }
   expandAiPanel();
+  aiScopeSelect.value = "selection";
 
   if (action === "custom") {
     questionInput.focus();
@@ -510,7 +617,7 @@ updatePaginationControls();
 updateSearchControls();
 try {
   if (window.localStorage.getItem("wenche.sourceMode") === "rss") {
-    setSourceMode("rss");
+    await setSourceMode("rss");
   }
 } catch {}
 
@@ -521,8 +628,8 @@ function renderPanelState() {
 
   updatePanelToggle(documentSidebarToggle, {
     collapsed: leftCollapsed,
-    collapseLabel: "收起文档栏",
-    expandLabel: "展开文档栏",
+    collapseLabel: "收起导航栏",
+    expandLabel: "展开导航栏",
     collapseIcon: "‹",
     expandIcon: "›"
   });
@@ -531,13 +638,218 @@ function renderPanelState() {
     collapseLabel: "收起 AI 面板",
     expandLabel: "展开 AI 面板",
     collapseIcon: "›",
-    expandIcon: "‹"
+    expandIcon: "AI"
   });
+  if (leftCollapsed) sidebarMore.open = false;
   savePanelState(window.localStorage, state.panels);
   requestAnimationFrame(() => {
+    if (rightCollapsed) {
+      fitFloatingAiLauncherToViewport();
+    } else {
+      fitFloatingAiPanelToViewport();
+    }
     applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
     applyDocxReadingScale();
   });
+}
+
+function setupFloatingAiPanel() {
+  if (state.floatingAiPanelBounds) {
+    applyFloatingAiPanelBounds(state.floatingAiPanelBounds);
+  }
+  if (state.floatingAiLauncherPosition) {
+    applyFloatingAiLauncherPosition(state.floatingAiLauncherPosition);
+  }
+
+  aiPanelToggle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !state.panels.rightCollapsed) return;
+    beginAiLauncherGesture(event);
+    event.stopPropagation();
+  });
+  aiPanelToggle.addEventListener("pointermove", (event) => {
+    if (aiPanelGesture?.type !== "launcher") return;
+    updateAiPanelGesture(event);
+    event.stopPropagation();
+  });
+  aiPanelToggle.addEventListener("pointerup", (event) => {
+    if (aiPanelGesture?.type !== "launcher") return;
+    finishAiPanelGesture(event);
+    event.stopPropagation();
+  });
+  aiPanelToggle.addEventListener("pointercancel", (event) => {
+    if (aiPanelGesture?.type !== "launcher") return;
+    finishAiPanelGesture(event);
+    event.stopPropagation();
+  });
+
+  aiPanelHeader.addEventListener("pointerdown", (event) => {
+    if (
+      event.button !== 0 ||
+      window.innerWidth <= 760 ||
+      state.panels.rightCollapsed ||
+      event.target.closest("button, a, input, select, textarea")
+    ) {
+      return;
+    }
+    beginAiPanelGesture("move", event, aiPanelHeader);
+  });
+  aiPanelHeader.addEventListener("pointermove", updateAiPanelGesture);
+  aiPanelHeader.addEventListener("pointerup", finishAiPanelGesture);
+  aiPanelHeader.addEventListener("pointercancel", finishAiPanelGesture);
+
+  aiPanelResize.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || window.innerWidth <= 760 || state.panels.rightCollapsed) return;
+    beginAiPanelGesture("resize", event, aiPanelResize);
+  });
+  aiPanelResize.addEventListener("pointermove", updateAiPanelGesture);
+  aiPanelResize.addEventListener("pointerup", finishAiPanelGesture);
+  aiPanelResize.addEventListener("pointercancel", finishAiPanelGesture);
+  aiPanelResize.addEventListener("keydown", (event) => {
+    if (
+      window.innerWidth <= 760 ||
+      state.panels.rightCollapsed ||
+      !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const rect = aiPanel.getBoundingClientRect();
+    const step = event.shiftKey ? 32 : 16;
+    const widthDelta =
+      event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+    const heightDelta =
+      event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+    applyFloatingAiPanelBounds({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width + widthDelta,
+      height: rect.height + heightDelta
+    });
+    saveFloatingPanelBounds(window.localStorage, state.floatingAiPanelBounds);
+  });
+}
+
+function beginAiPanelGesture(type, event, target) {
+  const rect = aiPanel.getBoundingClientRect();
+  aiPanelGesture = {
+    type,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    bounds: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    }
+  };
+  target.setPointerCapture(event.pointerId);
+  aiPanel.classList.add(type === "resize" ? "is-resizing" : "is-dragging");
+  event.preventDefault();
+}
+
+function beginAiLauncherGesture(event) {
+  const rect = aiPanel.getBoundingClientRect();
+  aiPanelGesture = {
+    type: "launcher",
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false,
+    bounds: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height
+    }
+  };
+  aiPanelToggle.setPointerCapture(event.pointerId);
+  aiPanel.classList.add("is-dragging");
+  event.preventDefault();
+}
+
+function updateAiPanelGesture(event) {
+  if (!aiPanelGesture || event.pointerId !== aiPanelGesture.pointerId) return;
+  const deltaX = event.clientX - aiPanelGesture.startX;
+  const deltaY = event.clientY - aiPanelGesture.startY;
+  const { bounds, type } = aiPanelGesture;
+  if (type === "launcher") {
+    aiPanelGesture.moved ||= Math.hypot(deltaX, deltaY) > 4;
+    applyFloatingAiLauncherPosition({
+      left: bounds.left + deltaX,
+      top: bounds.top + deltaY
+    });
+  } else {
+    applyFloatingAiPanelBounds(
+      type === "move"
+        ? {
+            ...bounds,
+            left: bounds.left + deltaX,
+            top: bounds.top + deltaY
+          }
+        : {
+            ...bounds,
+            width: bounds.width + deltaX,
+            height: bounds.height + deltaY
+          }
+    );
+  }
+  event.preventDefault();
+}
+
+function finishAiPanelGesture(event) {
+  if (!aiPanelGesture || event.pointerId !== aiPanelGesture.pointerId) return;
+  const finishedGesture = aiPanelGesture;
+  aiPanelGesture = null;
+  aiPanel.classList.remove("is-dragging", "is-resizing");
+  if (finishedGesture.type === "launcher") {
+    suppressAiPanelToggleClick = finishedGesture.moved && event.type === "pointerup";
+    if (suppressAiPanelToggleClick) {
+      window.setTimeout(() => {
+        suppressAiPanelToggleClick = false;
+      }, 0);
+    }
+    saveFloatingLauncherPosition(window.localStorage, state.floatingAiLauncherPosition);
+  } else {
+    saveFloatingPanelBounds(window.localStorage, state.floatingAiPanelBounds);
+    applyDocxReadingScale();
+  }
+}
+
+function applyFloatingAiPanelBounds(bounds) {
+  const constrained = constrainFloatingPanelBounds(
+    bounds,
+    { width: window.innerWidth, height: window.innerHeight }
+  );
+  state.floatingAiPanelBounds = constrained;
+  aiPanel.style.setProperty("--ai-panel-left", `${constrained.left}px`);
+  aiPanel.style.setProperty("--ai-panel-right", "auto");
+  aiPanel.style.setProperty("--ai-panel-top", `${constrained.top}px`);
+  aiPanel.style.setProperty("--ai-panel-width", `${constrained.width}px`);
+  aiPanel.style.setProperty("--ai-panel-height", `${constrained.height}px`);
+}
+
+function fitFloatingAiPanelToViewport() {
+  if (window.innerWidth <= 760 || !state.floatingAiPanelBounds) return;
+  applyFloatingAiPanelBounds(state.floatingAiPanelBounds);
+  saveFloatingPanelBounds(window.localStorage, state.floatingAiPanelBounds);
+}
+
+function applyFloatingAiLauncherPosition(position) {
+  const constrained = constrainFloatingLauncherPosition(
+    position,
+    { width: window.innerWidth, height: window.innerHeight }
+  );
+  state.floatingAiLauncherPosition = constrained;
+  aiPanel.style.setProperty("--ai-launcher-left", `${constrained.left}px`);
+  aiPanel.style.setProperty("--ai-launcher-right", "auto");
+  aiPanel.style.setProperty("--ai-launcher-top", `${constrained.top}px`);
+}
+
+function fitFloatingAiLauncherToViewport() {
+  if (!state.floatingAiLauncherPosition) return;
+  applyFloatingAiLauncherPosition(state.floatingAiLauncherPosition);
+  saveFloatingLauncherPosition(window.localStorage, state.floatingAiLauncherPosition);
 }
 
 function updateReadingSettings(changes) {
@@ -770,7 +1082,20 @@ async function loadDocumentList() {
   const archivePayload = await readJson(archivesResponse);
   state.documents = payload.documents || [];
   state.archives = archivePayload.archives || [];
+  localDocumentCount.textContent = String(state.documents.length);
   const existingIds = new Set(state.documents.map((document) => Number(document.id)));
+  if (
+    state.lastLocalDocumentId !== null &&
+    !existingIds.has(Number(state.lastLocalDocumentId))
+  ) {
+    state.lastLocalDocumentId = null;
+  }
+  if (state.lastLocalDocumentId === null) {
+    const persistedDocumentId = getLastDocumentId(window.localStorage);
+    if (existingIds.has(Number(persistedDocumentId))) {
+      state.lastLocalDocumentId = Number(persistedDocumentId);
+    }
+  }
   state.selectedDocumentIds = new Set(
     [...state.selectedDocumentIds].filter((id) => existingIds.has(Number(id)))
   );
@@ -778,12 +1103,23 @@ async function loadDocumentList() {
   renderDocumentList();
 }
 
-async function loadDocument(id, targetPage = "saved") {
+async function loadDocument(
+  id,
+  targetPage = "saved",
+  { rememberAsLocal = state.sourceMode === "local" } = {}
+) {
   setBusy(true, "正在读取");
   try {
     const response = await fetch(`/api/documents/${id}`);
     const payload = await readJson(response);
     state.document = payload;
+    const isVisibleLocalDocument =
+      rememberAsLocal &&
+      state.documents.some((document) => Number(document.id) === Number(payload.id));
+    state.documentContext = isVisibleLocalDocument ? "local" : "rss";
+    if (isVisibleLocalDocument) {
+      state.lastLocalDocumentId = Number(payload.id);
+    }
     state.docxPreview = null;
     let loadWarning = "";
     const semanticPages = payload.renderHtml
@@ -811,11 +1147,14 @@ async function loadDocument(id, targetPage = "saved") {
         );
         state.docxPreview.pages = measureDocxPages(state.docxPreview.sections);
         state.pages = state.docxPreview.pages;
+        assignBlockIdsByText(state.docxPreview.host, payload.blocks);
       } catch (error) {
         loadWarning = `${error.message}，已切换到阅读版`;
       }
     }
-    state.selection = { text: "", blockIds: [] };
+    state.selection = { text: "", blockIds: [], anchors: [] };
+    aiScopeSelect.querySelector("[value='selection']").disabled = true;
+    aiScopeSelect.value = "document";
     state.activeAnnotationId = null;
     state.readerQuery = "";
     state.searchMatches = [];
@@ -845,7 +1184,7 @@ async function loadDocument(id, targetPage = "saved") {
   }
 }
 
-async function runAi(mode, question = "") {
+async function runAi(mode, question = "", scopeOverride = "") {
   if (!state.document) {
     setStatus("请先上传或选择文档", true);
     return;
@@ -860,13 +1199,25 @@ async function runAi(mode, question = "") {
   state.aiController = controller;
   cancelAiButton.hidden = false;
   setBusy(true, "AI 正在解析");
-  const streamingAnswer = createStreamingAnswer(mode);
+  const scope = scopeOverride || (
+    mode === "custom"
+      ? aiScopeSelect.value
+      : state.selection.text || state.selection.blockIds.length
+        ? "selection"
+        : "page"
+  );
+  const currentPage = state.pages[state.pageIndex];
+  const selection = buildAiSelection(scope, currentPage);
+  if (scope === "selection" && !selection.text && !selection.blockIds.length) {
+    setStatus("请先选中文字，或把回答范围改为当前页、当前章节或全文", true);
+    cancelAiButton.hidden = true;
+    state.aiController = null;
+    setBusy(false);
+    return;
+  }
+  const streamingAnswer = createStreamingAnswer(mode, scope);
   try {
     const endpoint = mode === "custom" ? "/api/ai/ask" : "/api/ai/explain";
-    const currentPage = state.pages[state.pageIndex];
-    const selection = mode === "custom" && !state.selection.text && !state.selection.blockIds.length
-      ? { text: "", blockIds: currentPage?.blockIds || [], pageIndex: state.pageIndex }
-      : state.selection;
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -877,18 +1228,23 @@ async function runAi(mode, question = "") {
       body: JSON.stringify({
         documentId: state.document.id,
         mode,
+        scope,
         selection,
         question
       })
     });
     let answer = "";
+    let sources = [];
     await consumeEventStream(response, (event, payload) => {
-      if (event === "delta") {
+      if (event === "start") {
+        sources = payload.sources || [];
+      } else if (event === "delta") {
         answer += payload.delta;
-        updateStreamingAnswer(streamingAnswer, answer);
-      } else if (event === "done" && !answer && payload.answer) {
-        answer = payload.answer;
-        updateStreamingAnswer(streamingAnswer, answer);
+        updateStreamingAnswer(streamingAnswer, answer, sources);
+      } else if (event === "done") {
+        sources = payload.sources || sources;
+        if (payload.answer) answer = payload.answer;
+        updateStreamingAnswer(streamingAnswer, answer, sources);
       }
     });
     questionInput.value = "";
@@ -909,14 +1265,46 @@ async function runAi(mode, question = "") {
   }
 }
 
-function createStreamingAnswer(mode) {
+function buildAiSelection(scope, currentPage) {
+  if (scope === "document") {
+    return { text: "", blockIds: [], anchors: [], pageIndex: null };
+  }
+  if (scope === "page") {
+    return {
+      text: "",
+      blockIds: currentPage?.blockIds || [],
+      anchors: [],
+      pageIndex: state.pageIndex
+    };
+  }
+  if (scope === "section" && !state.selection.blockIds.length) {
+    return {
+      text: "",
+      blockIds: currentPage?.blockIds || [],
+      anchors: [],
+      pageIndex: state.pageIndex
+    };
+  }
+  return {
+    text: state.selection.text || "",
+    blockIds: state.selection.blockIds || [],
+    anchors: state.selection.anchors || [],
+    pageIndex: state.selection.pageIndex ?? state.pageIndex
+  };
+}
+
+function createStreamingAnswer(mode, scope) {
+  answerHistory.open = true;
+  answerSummary.textContent = "正在生成回答";
+  answerCount.textContent = String((state.document?.aiRecords?.length || 0) + 1);
+  if (!answerList.querySelector(".answer-item")) answerList.replaceChildren();
   const item = document.createElement("section");
   item.className = "answer-item is-streaming";
   item.dataset.mode = mode;
   const header = document.createElement("div");
   header.className = "answer-item-header";
   const title = document.createElement("strong");
-  title.textContent = `${modeLabel(mode)} · 正在生成`;
+  title.textContent = `${modeLabel(mode)} · ${scopeLabel(scope)} · 正在生成`;
   const signal = document.createElement("span");
   signal.className = "streaming-signal";
   signal.setAttribute("aria-label", "AI 正在生成回答");
@@ -926,12 +1314,25 @@ function createStreamingAnswer(mode) {
   body.textContent = "正在连接模型…";
   item.append(header, body);
   answerList.prepend(item);
-  return { item, title, body, signal };
+  return { item, title, body, signal, frame: null, pendingAnswer: "", pendingSources: [] };
 }
 
-function updateStreamingAnswer(streamingAnswer, answer) {
-  streamingAnswer.body.innerHTML = renderMarkdown(answer);
-  streamingAnswer.body.scrollIntoView({ block: "nearest" });
+function updateStreamingAnswer(streamingAnswer, answer, sources = []) {
+  streamingAnswer.pendingAnswer = answer;
+  streamingAnswer.pendingSources = sources;
+  if (streamingAnswer.frame) return;
+  streamingAnswer.frame = requestAnimationFrame(() => {
+    streamingAnswer.frame = null;
+    const nearBottom =
+      answerList.scrollHeight - answerList.scrollTop - answerList.clientHeight < 100;
+    streamingAnswer.body.innerHTML = renderMarkdown(
+      formatAnswerCitations(
+        streamingAnswer.pendingAnswer,
+        streamingAnswer.pendingSources
+      )
+    );
+    if (nearBottom) answerList.scrollTop = answerList.scrollHeight;
+  });
 }
 
 function finishStreamingAnswer(streamingAnswer, message, isError) {
@@ -950,15 +1351,8 @@ async function runAiForCurrentPage(mode) {
     return;
   }
 
-  const page = state.pages[state.pageIndex];
-  const text = page.blocks.map((block) => block.text).join("\n\n").slice(0, 1200);
-  state.selection = {
-    text: text ? `当前页：${text}` : "当前页",
-    blockIds: page.blockIds,
-    pageIndex: state.pageIndex
-  };
-
-  await runAi(mode);
+  aiScopeSelect.value = "page";
+  await runAi(mode, "", "page");
 }
 
 function updateReaderSearch(value) {
@@ -1037,11 +1431,23 @@ function renderDocumentList() {
   const groups = groupDocuments(visibleDocuments, state.sortMode);
   documentList.replaceChildren(
     ...groups.map((group) => {
-      const section = document.createElement("section");
+      const section = document.createElement("details");
       section.className = "document-group";
+      const activeCategory = state.document?.category?.trim() || "未分类";
+      bindDisclosureState(section, `local-group:${group.category}`, {
+        defaultOpen:
+          group.category === activeCategory ||
+          group.category === state.archiveFilter ||
+          groups.length === 1
+      });
 
-      const heading = document.createElement("h3");
-      heading.textContent = `${categoryLabel(group.category)} · ${group.documents.length}`;
+      const heading = document.createElement("summary");
+      const headingLabel = document.createElement("span");
+      headingLabel.textContent = categoryLabel(group.category);
+      const headingCount = document.createElement("span");
+      headingCount.className = "document-group-count";
+      headingCount.textContent = String(group.documents.length);
+      heading.append(headingLabel, headingCount);
 
       const items = document.createElement("div");
       items.className = "document-group-items";
@@ -1432,10 +1838,11 @@ function updateSelectionActions() {
 
 function clearDocumentView() {
   state.document = null;
+  state.documentContext = null;
   state.pages = [];
   state.docxPreview = null;
   state.pageIndex = 0;
-  state.selection = { text: "", blockIds: [] };
+  state.selection = { text: "", blockIds: [], anchors: [] };
   state.readerQuery = "";
   state.searchMatches = [];
   state.searchMatchIndex = -1;
@@ -1451,6 +1858,26 @@ function clearDocumentView() {
   updateSearchControls();
 }
 
+async function restoreLocalDocumentContext() {
+  const localDocument = state.documents.find(
+    (document) => Number(document.id) === Number(state.lastLocalDocumentId)
+  );
+  clearDocumentView();
+  if (localDocument) {
+    await loadDocument(localDocument.id, "saved", { rememberAsLocal: true });
+  }
+}
+
+function saveCurrentReadingProgress() {
+  if (!state.document) return;
+  saveReadingProgress(
+    window.localStorage,
+    state.document.id,
+    state.pageIndex,
+    { rememberDocument: state.documentContext === "local" }
+  );
+}
+
 function renderDocumentHeader(documentData) {
   readerTitle.textContent = documentData.title;
   renderDocumentList();
@@ -1460,20 +1887,20 @@ function showPage(pageIndex, { preserveScroll = false } = {}) {
   if (state.pages.length === 0) return;
   const previousScrollTop = reader.scrollTop;
   state.pageIndex = Math.min(Math.max(pageIndex, 0), state.pages.length - 1);
-  state.selection = { text: "", blockIds: [] };
+  state.selection = { text: "", blockIds: [], anchors: [] };
   state.activeAnnotationId = null;
   selectionMenu.hidden = true;
 
   if (state.docxPreview) {
     renderDocxPage({ preserveScroll });
-    saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+    saveCurrentReadingProgress();
     updatePaginationControls();
     return;
   }
 
   if (state.document.renderHtml) {
     renderRichHtmlDocument();
-    saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+    saveCurrentReadingProgress();
     updatePaginationControls();
     return;
   }
@@ -1501,7 +1928,7 @@ function showPage(pageIndex, { preserveScroll = false } = {}) {
   reader.scrollTop = preserveScroll ? previousScrollTop : 0;
   highlightReaderMatches();
   applySavedAnnotations(reader);
-  saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+  saveCurrentReadingProgress();
   updatePaginationControls();
 }
 
@@ -1546,7 +1973,7 @@ function syncDocxPageFromScroll() {
     );
     if (nextPageIndex < 0 || nextPageIndex === state.pageIndex) return;
     state.pageIndex = nextPageIndex;
-    saveReadingProgress(window.localStorage, state.document.id, state.pageIndex);
+    saveCurrentReadingProgress();
     updatePaginationControls();
   });
 }
@@ -1562,12 +1989,15 @@ function renderRichHtmlDocument() {
   frame.addEventListener("load", () => {
     const frameDocument = frame.contentDocument;
     if (!frameDocument) return;
+    assignBlockIdsByText(frameDocument.body, state.document.blocks);
     frameDocument.addEventListener("mouseup", () => {
       setTimeout(() => captureFrameSelection(frame), 0);
     });
     frameDocument.addEventListener("mousedown", () => {
       selectionMenu.hidden = true;
-      state.selection = { text: "", blockIds: [] };
+      state.selection = { text: "", blockIds: [], anchors: [] };
+      aiScopeSelect.querySelector("[value='selection']").disabled = true;
+      if (aiScopeSelect.value === "selection") aiScopeSelect.value = "document";
       state.activeAnnotationId = null;
     });
     frameDocument.addEventListener("click", (event) => {
@@ -1701,16 +2131,18 @@ function captureFrameSelection(frame) {
   const text = selection?.toString().trim() || "";
   if (!text || !selection.rangeCount) return;
 
-  const rangeRect = selection.getRangeAt(0).getBoundingClientRect();
+  const range = selection.getRangeAt(0);
+  const rangeRect = range.getBoundingClientRect();
   const frameRect = frame.getBoundingClientRect();
-  const excerpt = text.slice(0, 80);
-  const blockIds = state.document.blocks
-    .filter((block) => block.text.includes(excerpt))
-    .map((block) => Number(block.id));
+  const anchors = buildRangeAnchors(range, frame.contentDocument.body);
+  const blockIds = anchors.length > 0
+    ? anchors.map((anchor) => anchor.blockId)
+    : findBlockIdsByText(state.document.blocks, text);
 
   showSelectionMenu({
     text,
     blockIds,
+    anchors,
     rect: {
       left: frameRect.left + rangeRect.left,
       width: rangeRect.width,
@@ -1777,8 +2209,13 @@ function renderHistory(records) {
   historyToggleButton.textContent = state.showAllHistory
     ? "收起"
     : `查看全部 (${recordList.length})`;
+  answerCount.textContent = String(recordList.length);
+  answerSummary.textContent = recordList.length
+    ? `最近显示 ${visibleRecords.length} 条`
+    : "暂无记录";
   if (!visibleRecords.length) {
-    answerList.replaceChildren(emptyText("选中文字后开始解析"));
+    answerHistory.open = false;
+    answerList.replaceChildren(emptyText("暂无解析记录"));
     return;
   }
 
@@ -1807,7 +2244,9 @@ function createAnswerElement(record) {
 
   const body = document.createElement("div");
   body.className = "answer-body";
-  body.innerHTML = renderMarkdown(record.answer);
+  body.innerHTML = renderMarkdown(
+    formatAnswerCitations(record.answer, record.contextSources)
+  );
 
   const meta = document.createElement("small");
   meta.textContent = formatAnswerMeta(record);
@@ -1859,11 +2298,13 @@ async function navigateToAnswerReference(button) {
 }
 
 function flashAnswerReference(blockId) {
+  const richFrame = reader.querySelector(".reader-rich-frame");
   const target = blockId
-    ? reader.querySelector(`[data-block-id="${blockId}"]`)
+    ? reader.querySelector(`[data-block-id="${blockId}"]`) ||
+      richFrame?.contentDocument?.querySelector(`[data-block-id="${blockId}"]`)
     : state.docxPreview
       ? reader.querySelector("section.docx:not([hidden])")
-      : reader.querySelector(".reader-rich-frame") || reader;
+      : richFrame || reader;
   if (!target) return;
   target.scrollIntoView({ block: "center", behavior: "smooth" });
   target.classList.add("is-citation-target");
@@ -1885,13 +2326,28 @@ function captureSelection() {
   const blockIds = [...reader.querySelectorAll(".doc-block")]
     .filter((block) => range.intersectsNode(block))
     .map((block) => Number(block.dataset.blockId));
+  const anchors = buildRangeAnchors(range, reader);
   const rect = range.getBoundingClientRect();
 
-  showSelectionMenu({ text, blockIds, rect });
+  showSelectionMenu({
+    text,
+    blockIds: anchors.length > 0
+      ? anchors.map((anchor) => anchor.blockId)
+      : blockIds,
+    anchors,
+    rect
+  });
 }
 
-function showSelectionMenu({ text, blockIds, rect }) {
-  state.selection = { text, blockIds, pageIndex: state.pageIndex };
+function showSelectionMenu({ text, blockIds, anchors = [], rect }) {
+  state.selection = {
+    text,
+    blockIds: [...new Set(blockIds)],
+    anchors,
+    pageIndex: state.pageIndex
+  };
+  aiScopeSelect.querySelector("[value='selection']").disabled = false;
+  aiScopeSelect.value = "selection";
   state.activeAnnotationId = null;
   selectionMenu.dataset.mode = "selection";
   positionSelectionMenu(rect);
@@ -1916,8 +2372,10 @@ function showAnnotationMenu(target, frame = null) {
   state.selection = {
     text: annotation.selectedText || "",
     blockIds: annotation.blockIds || [],
+    anchors: [],
     pageIndex: annotation.pageIndex
   };
+  aiScopeSelect.querySelector("[value='selection']").disabled = false;
   selectionMenu.dataset.mode = "annotation";
   const removeButton = selectionMenu.querySelector("[data-action='remove-annotation']");
   removeButton.textContent = annotation.kind === "highlight" ? "取消高亮" : "删除批注";
@@ -2399,6 +2857,13 @@ function modeLabel(mode) {
   if (mode === "deep") return "深入解析";
   if (mode === "custom") return "自定义问题";
   return "直接解析";
+}
+
+function scopeLabel(scope) {
+  if (scope === "page") return "当前页";
+  if (scope === "section") return "当前章节";
+  if (scope === "document") return "全文";
+  return "选区";
 }
 
 function emptyText(text) {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildBriefSelection, scoreEntry } from "../src/lib/rss/rssRanking.js";
+import {
+  buildBriefSelection,
+  RANKING_WEIGHTS,
+  scoreEntry
+} from "../src/lib/rss/rssRanking.js";
 
 const baseEntry = {
   id: 1,
@@ -54,6 +58,34 @@ test("hidden entries rank below visible ones and read state is not persisted int
   // 已读状态不写入持久化分数，避免打开过的条目永久沉底（排序层动态降权）
   const read = scoreEntry({ entry: { ...baseEntry, readState: "read" }, analysis: null, preferences: prefs });
   assert.equal(read.priority, visible.priority);
+});
+
+test("freshness is the strongest signal and recent entries beat modest quality advantages", () => {
+  const now = Date.parse("2026-07-29T12:00:00.000Z");
+  const recent = scoreEntry({
+    entry: {
+      ...baseEntry,
+      publishedAt: "2026-07-29T11:00:00.000Z"
+    },
+    analysis: { qualitySignals: { originality: 50, depth: 50, evidence: 50, practicality: 50 } },
+    preferences: prefs,
+    now
+  });
+  const oldHighQuality = scoreEntry({
+    entry: {
+      ...baseEntry,
+      publishedAt: "2026-07-19T12:00:00.000Z"
+    },
+    analysis: { qualitySignals: { originality: 100, depth: 100, evidence: 100, practicality: 100 } },
+    preferences: prefs,
+    now
+  });
+
+  assert.equal(
+    RANKING_WEIGHTS.freshness,
+    Math.max(...Object.values(RANKING_WEIGHTS))
+  );
+  assert.ok(recent.priority > oldHighQuality.priority);
 });
 
 test("brief selection keeps at most two entries per feed", () => {

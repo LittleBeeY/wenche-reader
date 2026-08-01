@@ -32,8 +32,15 @@ export function calculateSelectionMenuPosition({
   };
 }
 
-export function dismissSelectionUi({ menu, browserSelection, state }) {
+export function dismissSelectionUi({
+  menu,
+  browserSelection,
+  state,
+  preserveSelection = false
+}) {
   menu.hidden = true;
   browserSelection?.removeAllRanges();
-  state.selection = { text: "", blockIds: [] };
+  if (!preserveSelection) {
+    state.selection = { text: "", blockIds: [], anchors: [] };
+  }
 }

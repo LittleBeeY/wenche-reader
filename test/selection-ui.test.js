@@ -21,7 +21,21 @@ test("dismisses the selection menu and clears browser and app selections", () =>
 
   assert.equal(menu.hidden, true);
   assert.equal(rangesCleared, true);
-  assert.deepEqual(state.selection, { text: "", blockIds: [] });
+  assert.deepEqual(state.selection, { text: "", blockIds: [], anchors: [] });
+});
+
+test("can hide the menu while preserving a selection for a custom question", () => {
+  const menu = { hidden: false };
+  const state = { selection: { text: "selected", blockIds: [1], anchors: [] } };
+
+  dismissSelectionUi({
+    menu,
+    browserSelection: null,
+    state,
+    preserveSelection: true
+  });
+
+  assert.deepEqual(state.selection, { text: "selected", blockIds: [1], anchors: [] });
 });
 
 test("places the menu below a desktop selection", () => {

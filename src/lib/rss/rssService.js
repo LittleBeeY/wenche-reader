@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArticleDocument, sanitizeArticleHtml } from "../documentParser.js";
 import { analyzeEntry as analyzeEntryWithAi } from "./rssAnalysis.js";
@@ -14,6 +14,7 @@ import {
 import { buildOpml, classifyOpmlItems, normalizeFeedUrl, parseOpml } from "./opml.js";
 import { buildBriefSelection, scoreEntry } from "./rssRanking.js";
 import { extractFullText } from "./webExtractor.js";
+import { hasBrokenArticleImages } from "./imageProxy.js";
 
 export const MIN_FETCH_INTERVAL_MINUTES = 15;
 const ANALYSIS_WINDOW_HOURS = 48;
@@ -97,7 +98,8 @@ export class RssService {
       throw new RssError("该订阅已存在", 409);
     }
 
-    const interval = Math.max(MIN_FETCH_INTERVAL_MINUTES, Number(fetchIntervalMinutes) || 60);
+    const defaultInterval = this.storage.getRssPreferences().fetchIntervalMinutes || 60;
+    const interval = Math.max(MIN_FETCH_INTERVAL_MINUTES, Number(fetchIntervalMinutes) || defaultInterval);
     const response = await this.fetchImpl({
       url: normalizedUrl,
       maxBytes: FETCH_LIMITS.maxFeedBytes,
@@ -113,9 +115,14 @@ export class RssService {
       feed = this.storage.updateRssFeed(existing.id, {
         title: title || parsed.title,
         folderId,
+        siteUrl: parsed.siteUrl,
+        description: parsed.description,
+        iconUrl: parsed.iconUrl,
+        language: parsed.language,
         priority,
         fetchIntervalMinutes: interval,
         fullTextMode,
+        disabled: false,
         deletedAt: null
       });
     } else {
@@ -133,7 +140,7 @@ export class RssService {
       });
     }
 
-    const inserted = this.insertEntries(feed.id, parsed.entries);
+    const changes = this.insertEntries(feed.id, parsed.entries);
     this.storage.updateRssFeedFetch(feed.id, {
       etag: response.headers.etag || "",
       lastModified: response.headers["last-modified"] || "",
@@ -142,7 +149,7 @@ export class RssService {
       consecutiveFailures: 0,
       lastError: ""
     });
-    return { feed: this.storage.getRssFeed(feed.id), inserted };
+    return { feed: this.storage.getRssFeed(feed.id), ...changes };
   }
 
   // ---------- 刷新 ----------
@@ -176,7 +183,7 @@ export class RssService {
       }
 
       const parsed = parseFeed(response.text(), { feedUrl: response.finalUrl });
-      const inserted = this.insertEntries(feed.id, parsed.entries);
+      const changes = this.insertEntries(feed.id, parsed.entries);
       this.storage.updateRssFeedFetch(feed.id, {
         etag: response.headers.etag || feed.etag,
         lastModified: response.headers["last-modified"] || feed.lastModified,
@@ -185,11 +192,11 @@ export class RssService {
         consecutiveFailures: 0,
         lastError: ""
       });
-      return { feedId: feed.id, status: "success", inserted, trigger };
+      return { feedId: feed.id, status: "success", ...changes, trigger };
     } catch (error) {
       const failures = feed.consecutiveFailures + 1;
       this.storage.updateRssFeedFetch(feed.id, {
-        lastFetchedAt: attemptedAt,
+        lastFetchedAt: feed.lastFetchedAt,
         nextFetchAt: this.nextFetchTime(feed.fetchIntervalMinutes, failures),
         consecutiveFailures: failures,
         lastError: userReadableFetchError(error)
@@ -199,8 +206,10 @@ export class RssService {
     }
   }
 
-  async refreshDueFeeds({ concurrency = 4, onlyFeedIds = null } = {}) {
-    const due = this.storage.listDueRssFeeds(new Date().toISOString(), 100)
+  async refreshDueFeeds({ concurrency = 4, onlyFeedIds = null, force = false } = {}) {
+    const due = (force
+      ? this.storage.listRssFeeds().filter((feed) => !feed.disabled)
+      : this.storage.listDueRssFeeds(new Date().toISOString(), 100))
       .filter((feed) => !onlyFeedIds || onlyFeedIds.includes(feed.id));
     this.refreshState = { running: true, lastRunAt: new Date().toISOString(), lastResult: null };
     const results = [];
@@ -222,7 +231,8 @@ export class RssService {
       success: results.filter((result) => result.status === "success").length,
       notModified: results.filter((result) => result.status === "not_modified").length,
       failed: results.filter((result) => result.status === "failed").length,
-      inserted: results.reduce((sum, result) => sum + (result.inserted || 0), 0)
+      inserted: results.reduce((sum, result) => sum + (result.inserted || 0), 0),
+      updated: results.reduce((sum, result) => sum + (result.updated || 0), 0)
     };
     this.refreshState = { running: false, lastRunAt: new Date().toISOString(), lastResult: summary };
     return { ...summary, results };
@@ -247,9 +257,12 @@ export class RssService {
 
   insertEntries(feedId, parsedEntries) {
     let inserted = 0;
+    let updated = 0;
+    const feed = this.storage.getRssFeed(feedId);
     for (const entry of parsedEntries.slice(0, MAX_ENTRIES_PER_FETCH)) {
-      const contentHtml = sanitizeArticleHtml(entry.contentHtml || entry.summaryHtml || "");
-      const summaryHtml = sanitizeArticleHtml(entry.summaryHtml || "");
+      const baseUrl = entry.canonicalUrl || feed?.siteUrl || feed?.feedUrl || "";
+      const contentHtml = sanitizeArticleHtml(entry.contentHtml || entry.summaryHtml || "", { baseUrl });
+      const summaryHtml = sanitizeArticleHtml(entry.summaryHtml || "", { baseUrl });
       const contentText = stripHtml(contentHtml || summaryHtml);
       const dedupeKey = buildDedupeKey({
         guid: entry.guid,
@@ -269,14 +282,15 @@ export class RssService {
         summaryHtml,
         contentHtml,
         contentText,
-        contentHash: hashContent(contentText),
+        contentHash: hashContent(`${contentText}\n${contentHtml}`),
         thumbnailUrl: entry.thumbnailUrl,
         language: entry.language,
         estimatedReadMinutes: entry.estimatedReadMinutes
       });
       if (result.created) inserted += 1;
+      else if (result.updated) updated += 1;
     }
-    return inserted;
+    return { inserted, updated };
   }
 
   nextFetchTime(intervalMinutes, consecutiveFailures) {
@@ -318,17 +332,35 @@ export class RssService {
     const updated = this.storage.setRssEntryContent(entry.id, {
       contentHtml: extracted.contentHtml,
       contentText,
-      contentHash: hashContent(contentText),
-      estimatedReadMinutes: Math.max(1, Math.round(contentText.length / 400))
+      contentHash: hashContent(`${contentText}\n${extracted.contentHtml}`),
+      estimatedReadMinutes: Math.max(1, Math.round(contentText.length / 400)),
+      contentSource: "extracted"
     });
-    // 已有阅读快照的正文哈希随之变化，由前端提示“来源已更新”
-    return updated;
+    const snapshot = await this.syncSnapshotIfSafe(updated);
+    return { entry: this.getEntry(id), snapshot };
   }
 
   // ---------- 阅读快照 ----------
 
   async openEntry(id) {
-    const entry = this.getEntry(id);
+    let entry = this.getEntry(id);
+    if (
+      entry.canonicalUrl &&
+      (
+        (
+          entry.feedFullTextMode === "extract_on_open" &&
+          entry.contentSource !== "extracted"
+        ) ||
+        hasBrokenArticleImages(entry.contentHtml || entry.summaryHtml)
+      )
+    ) {
+      try {
+        const extracted = await this.extractEntry(id);
+        entry = extracted.entry;
+      } catch {
+        // 默认提取失败时保留 Feed 已有内容，阅读流程不能被阻断
+      }
+    }
     let documentId = entry.documentId;
     let sourceUpdated = false;
 
@@ -354,18 +386,11 @@ export class RssService {
   }
 
   async createSnapshot(entry) {
-    const html = entry.contentHtml || entry.summaryHtml || "<p>(该资讯只有标题，可打开原网页阅读)</p>";
-    const parsed = parseArticleDocument({ title: entry.title, html });
+    const { parsed, fileHtml } = buildSnapshot(entry);
     const snapshotName = `rss-entry-${entry.id}-${randomUUID()}.html`;
     const snapshotDir = path.join(this.uploadDir, "rss");
     await mkdir(snapshotDir, { recursive: true });
     const filePath = path.join(snapshotDir, snapshotName);
-    const fileHtml = [
-      "<!doctype html><html><head><meta charset=\"utf-8\">",
-      `<title>${escapeHtml(entry.title)}</title></head><body>`,
-      parsed.sanitizedHtml,
-      "</body></html>"
-    ].join("");
     await writeFile(filePath, fileHtml, "utf8");
 
     return this.storage.createDocument({
@@ -381,6 +406,41 @@ export class RssService {
       contentHash: entry.contentHash || hashContent(parsed.sanitizedHtml),
       blocks: parsed.blocks
     });
+  }
+
+  async syncSnapshotIfSafe(entry) {
+    if (!entry.documentId) return { updated: false, reason: "not_created" };
+    const document = this.storage.getDocument(entry.documentId);
+    if (!document) return { updated: false, reason: "missing" };
+    if (document.contentHash === entry.contentHash) return { updated: false, reason: "current" };
+
+    const relativePath = path.relative(path.resolve(this.uploadDir), path.resolve(document.filePath));
+    if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      throw new RssError("阅读快照路径不在 uploads 目录内", 400);
+    }
+
+    const { parsed, fileHtml } = buildSnapshot(entry);
+    const result = this.storage.replaceRssDocumentSnapshot(document.id, {
+      title: entry.title,
+      contentHash: entry.contentHash,
+      blocks: parsed.blocks
+    });
+    if (!result?.updated) {
+      const imageRepair = result?.protected
+        ? this.storage.repairRssDocumentImages(document.id, parsed.blocks)
+        : null;
+      if (imageRepair?.updated) {
+        await repairSnapshotFileImages(document.filePath, parsed.blocks);
+      }
+      return {
+        updated: false,
+        reason: result?.protected ? "protected" : "missing",
+        assets: result?.assets || null,
+        imagesRepaired: imageRepair?.updated ? imageRepair.count : 0
+      };
+    }
+    await writeFile(document.filePath, fileHtml, "utf8");
+    return { updated: true, reason: "replaced" };
   }
 
   async saveEntryToLibrary(id, { category = "未分类" } = {}) {
@@ -607,6 +667,33 @@ function userReadableFetchError(error) {
   if (error?.statusCode === 413) return "订阅源内容超过大小限制。";
   if (error?.statusCode === 504) return "订阅源响应超时，已安排稍后重试。";
   return `该订阅暂时无法访问，已安排稍后重试。（${error?.message || "网络错误"}）`;
+}
+
+function buildSnapshot(entry) {
+  const html = entry.contentHtml || entry.summaryHtml || "<p>(该资讯只有标题，可打开原网页阅读)</p>";
+  const parsed = parseArticleDocument({ title: entry.title, html });
+  const fileHtml = [
+    "<!doctype html><html><head><meta charset=\"utf-8\">",
+    `<title>${escapeHtml(entry.title)}</title></head><body>`,
+    parsed.sanitizedHtml,
+    "</body></html>"
+  ].join("");
+  return { parsed, fileHtml };
+}
+
+async function repairSnapshotFileImages(filePath, blocks) {
+  const replacementTags = (blocks || [])
+    .flatMap((block) => [...String(block.html || "").matchAll(/<img\b[^>]*\bsrc=["'][^"']+["'][^>]*>/gi)])
+    .map((match) => match[0]);
+  if (replacementTags.length === 0) return false;
+
+  const html = await readFile(filePath, "utf8");
+  const missingTags = [...html.matchAll(/<img\b(?![^>]*\bsrc=)[^>]*>/gi)];
+  if (missingTags.length !== replacementTags.length) return false;
+  let index = 0;
+  const repaired = html.replace(/<img\b(?![^>]*\bsrc=)[^>]*>/gi, () => replacementTags[index++]);
+  await writeFile(filePath, repaired, "utf8");
+  return true;
 }
 
 function escapeHtml(text) {

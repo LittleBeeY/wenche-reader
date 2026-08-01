@@ -15,6 +15,8 @@
     "config:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/config-ai.ps1",
     "test": "node --test",
     "test:unit": "node --test test/*.test.js",
+    "test:ai": "node --test test/ai-provider.test.js test/selection.test.js test/selection-anchors.test.js test/answer-citations.test.js test/answer-references.test.js test/ai-evaluation.test.js",
+    "rss:import-bestblogs": "node scripts/import-bestblogs.mjs",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install firefox",
     "release:check": "npm test && npm audit --omit=dev --audit-level=moderate --registry=https://registry.npmjs.org"

@@ -4,6 +4,7 @@ import mammoth from "mammoth";
 import { marked } from "marked";
 import { PDFParse } from "pdf-parse";
 import sanitizeHtml from "sanitize-html";
+import { toRssImageProxyPath } from "./rss/imageProxy.js";
 
 const SUPPORTED_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".html", ".htm", ".pdf", ".docx", ".epub"]);
 const EPUB_LIMITS = Object.freeze({
@@ -44,8 +45,8 @@ export function isSupportedFile(originalName) {
  * 与导入文档同等级别的 HTML 清洗，供 RSS 摘要、正文与提取全文复用。
  * Feed 路由不得自行拼接清洗规则。
  */
-export function sanitizeArticleHtml(html) {
-  return sanitizeForArticle(html);
+export function sanitizeArticleHtml(html, { baseUrl = "" } = {}) {
+  return sanitizeForArticle(html, { proxyRemoteImages: true, baseUrl });
 }
 
 /**
@@ -139,7 +140,7 @@ function parseHtml(originalName, html, options = {}) {
   };
 }
 
-function sanitizeForArticle(html) {
+function sanitizeForArticle(html, { proxyRemoteImages = false, baseUrl = "" } = {}) {
   return sanitizeHtml(html, {
     allowedTags: [
       "article",
@@ -180,7 +181,7 @@ function sanitizeForArticle(html) {
     allowedAttributes: {
       "*": ["class"],
       a: ["href", "title", "class"],
-      img: ["src", "alt", "title", "width", "height", "class"],
+      img: ["src", "alt", "title", "width", "height", "class", "loading", "decoding"],
       ol: ["start", "class"],
       li: ["value", "class"],
       th: ["colspan", "rowspan", "scope", "class"],
@@ -190,6 +191,29 @@ function sanitizeForArticle(html) {
     allowedSchemesByTag: {
       img: ["data"]
     },
+    transformTags: proxyRemoteImages
+      ? {
+          img: (tagName, attribs) => {
+            const preferredSource =
+              attribs["data-src"] ||
+              attribs["data-original"] ||
+              attribs["data-lazy-src"] ||
+              attribs.src ||
+              "";
+            const src = toRssImageProxyPath(preferredSource, { baseUrl });
+            return {
+              tagName,
+              attribs: {
+                ...attribs,
+                src,
+                loading: "lazy",
+                decoding: "async"
+              }
+            };
+          }
+        }
+      : undefined,
+    exclusiveFilter: (frame) => frame.tag === "img" && !frame.attribs.src,
     disallowedTagsMode: "discard"
   });
 }

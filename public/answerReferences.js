@@ -1,7 +1,25 @@
 const MARKER_PATTERN = /\[第\s*(\d+)\s*(页|段)\]/g;
+const CITATION_PATTERN = /\[cite:(B\d+)\]/g;
 
 export function resolveAnswerReferences(record, blocks = [], pages = []) {
   const references = [];
+  const sources = Array.isArray(record?.contextSources) ? record.contextSources : [];
+  for (const match of String(record?.answer || "").matchAll(CITATION_PATTERN)) {
+    const source = sources.find((item) => String(item.id) === match[1]);
+    if (!source) continue;
+    const block = blocks.find((item) => Number(item.id) === Number(source.blockId));
+    const pageIndex = Number.isInteger(source.pageIndex)
+      ? source.pageIndex
+      : block
+        ? findBlockPage(block, pages)
+        : 0;
+    addReference(references, {
+      label: `第 ${source.position || block?.position + 1 || "?"} 段 · 第 ${pageIndex + 1} 页`,
+      pageIndex,
+      blockId: Number(source.blockId) || null
+    });
+  }
+
   const allowedMarkers = new Set(
     [...String(record?.context || "").matchAll(MARKER_PATTERN)]
       .map((match) => markerKey(match[1], match[2]))
@@ -38,6 +56,16 @@ export function resolveAnswerReferences(record, blocks = [], pages = []) {
     }
   }
   return references.slice(0, 8);
+}
+
+export function formatAnswerCitations(answer, sources = []) {
+  const sourceById = new Map(
+    (sources || []).map((source) => [String(source.id), source])
+  );
+  return String(answer || "").replace(CITATION_PATTERN, (_marker, sourceId) => {
+    const source = sourceById.get(sourceId);
+    return source ? `〔原文 ${source.position || sourceId}〕` : "";
+  });
 }
 
 function markerKey(number, type) {
