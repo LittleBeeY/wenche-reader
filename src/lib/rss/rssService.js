@@ -12,7 +12,7 @@ import {
   stripHtml
 } from "./feedParser.js";
 import { buildOpml, classifyOpmlItems, normalizeFeedUrl, parseOpml } from "./opml.js";
-import { buildBriefSelection, scoreEntry } from "./rssRanking.js";
+import { buildBriefSelection, hasSubstantialContent, scoreEntry } from "./rssRanking.js";
 import { extractFullText } from "./webExtractor.js";
 import { hasBrokenArticleImages } from "./imageProxy.js";
 
@@ -367,7 +367,12 @@ export class RssService {
     if (documentId) {
       const document = this.storage.getDocument(documentId);
       if (document) {
-        sourceUpdated = Boolean(document.contentHash) && document.contentHash !== entry.contentHash;
+        if (!hasReadableSnapshotBody(document)) {
+          const repaired = await this.syncSnapshotIfSafe(entry, { force: true });
+          sourceUpdated = repaired.updated;
+        } else {
+          sourceUpdated = Boolean(document.contentHash) && document.contentHash !== entry.contentHash;
+        }
       } else {
         documentId = null;
       }
@@ -408,11 +413,13 @@ export class RssService {
     });
   }
 
-  async syncSnapshotIfSafe(entry) {
+  async syncSnapshotIfSafe(entry, { force = false } = {}) {
     if (!entry.documentId) return { updated: false, reason: "not_created" };
     const document = this.storage.getDocument(entry.documentId);
     if (!document) return { updated: false, reason: "missing" };
-    if (document.contentHash === entry.contentHash) return { updated: false, reason: "current" };
+    if (!force && document.contentHash === entry.contentHash) {
+      return { updated: false, reason: "current" };
+    }
 
     const relativePath = path.relative(path.resolve(this.uploadDir), path.resolve(document.filePath));
     if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
@@ -501,7 +508,7 @@ export class RssService {
 
   async generateTodayBrief({ force = false } = {}) {
     const briefDate = new Date().toISOString().slice(0, 10);
-    const existing = this.storage.getRssBrief(briefDate);
+    const existing = this.getTodayBrief();
     if (existing && !force) return existing;
 
     const preferences = this.storage.getRssPreferences();
@@ -540,7 +547,12 @@ export class RssService {
   }
 
   getTodayBrief() {
-    return this.storage.getRssBrief(new Date().toISOString().slice(0, 10));
+    const brief = this.storage.getRssBrief(new Date().toISOString().slice(0, 10));
+    if (!brief) return null;
+    return {
+      ...brief,
+      entries: brief.entries.filter((item) => hasSubstantialContent(item.entry))
+    };
   }
 
   // ---------- OPML ----------
@@ -670,7 +682,9 @@ function userReadableFetchError(error) {
 }
 
 function buildSnapshot(entry) {
-  const html = entry.contentHtml || entry.summaryHtml || "<p>(该资讯只有标题，可打开原网页阅读)</p>";
+  const html = normalizeSnapshotHtml(
+    entry.contentHtml || entry.summaryHtml || "(该资讯只有标题，可打开原网页阅读)"
+  );
   const parsed = parseArticleDocument({ title: entry.title, html });
   const fileHtml = [
     "<!doctype html><html><head><meta charset=\"utf-8\">",
@@ -679,6 +693,21 @@ function buildSnapshot(entry) {
     "</body></html>"
   ].join("");
   return { parsed, fileHtml };
+}
+
+function hasReadableSnapshotBody(document) {
+  return (document?.blocks || []).some(
+    (block) => block.type !== "heading" && String(block.text || "").trim().length > 0
+  );
+}
+
+function normalizeSnapshotHtml(value) {
+  const content = String(value || "").trim();
+  if (/<\/?[a-z][^>]*>/i.test(content)) return content;
+  return content
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
 }
 
 async function repairSnapshotFileImages(filePath, blocks) {

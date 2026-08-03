@@ -347,6 +347,8 @@ select:focus-visible {
   display: flex;
   gap: 12px;
   margin: 0 4px 10px;
+  padding-right: 42px;
+  position: relative;
 }
 
 .aside-toggle {
@@ -362,8 +364,15 @@ select:focus-visible {
   justify-content: center;
   margin-left: auto;
   min-height: 34px;
-  padding: 0 0 3px;
+  padding: 0;
   width: 34px;
+}
+
+#toggle-document-sidebar {
+  margin-left: 0;
+  position: absolute;
+  right: 0;
+  top: 3px;
 }
 
 .aside-toggle:hover {
@@ -390,6 +399,7 @@ select:focus-visible {
 .app-shell.is-left-collapsed .brand {
   flex-direction: column;
   gap: 8px;
+  padding-right: 0;
 }
 
 .app-shell.is-left-collapsed .brand,
@@ -400,16 +410,17 @@ select:focus-visible {
   padding: 0;
 }
 
-.app-shell.is-left-collapsed .aside-toggle,
-.app-shell.is-right-collapsed .aside-toggle {
+.app-shell.is-left-collapsed #toggle-document-sidebar,
+.app-shell.is-right-collapsed #toggle-ai-panel {
   margin-left: 0;
 }
 
-.app-shell.is-left-collapsed .aside-toggle {
+.app-shell.is-left-collapsed #toggle-document-sidebar {
   border: 0;
   border-radius: 50%;
   height: 32px;
   min-height: 32px;
+  position: static;
   width: 32px;
 }
 
@@ -842,7 +853,7 @@ select:focus-visible {
 
 .sidebar-more {
   flex: 0 0 auto;
-  margin-top: 8px;
+  margin-top: auto;
   position: relative;
 }
 
@@ -2618,18 +2629,36 @@ select:focus-visible {
 }
 
 #knowledge-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   overflow: auto;
   padding-right: 3px;
   scrollbar-color: #bdc8c3 transparent;
   scrollbar-width: thin;
 }
 
-#knowledge-view .knowledge-section:last-child {
+#knowledge-view .knowledge-section {
   flex: 0 0 auto;
+  gap: 8px;
+  min-height: max-content;
+  min-width: 0;
 }
 
 #knowledge-view .knowledge-list {
+  gap: 12px;
+  min-height: max-content;
   overflow: visible;
+}
+
+#knowledge-view .answer-toolbar {
+  line-height: 1.4;
+  min-height: 20px;
+  padding-top: 10px;
+}
+
+#knowledge-view .answer-toolbar span {
+  line-height: 1.4;
 }
 
 .knowledge-list {
@@ -2998,7 +3027,7 @@ select:focus-visible {
     width: 38px;
   }
 
-  .app-shell.is-left-collapsed .aside-toggle {
+  .app-shell.is-left-collapsed #toggle-document-sidebar {
     margin-left: auto;
   }
 
@@ -3109,6 +3138,16 @@ select:focus-visible {
   align-items: center;
   display: flex;
   justify-content: space-between;
+}
+
+.rss-nav-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.rss-nav-actions .rss-nav-mini {
+  font-size: 11px;
+  padding: 3px 6px;
 }
 
 .rss-nav-disclosure {
@@ -3931,6 +3970,26 @@ select:focus-visible {
   width: auto !important;
 }
 
+.rss-feed-fulltext {
+  align-items: center;
+  display: grid;
+  gap: 2px 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.rss-feed-fulltext > span {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rss-feed-fulltext > small {
+  color: var(--text-muted, #7a7a7a);
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.35;
+}
+
 .rss-feed-controls button.is-danger {
   color: #b91c1c;
 }
@@ -3942,8 +4001,20 @@ select:focus-visible {
 }
 
 .rss-folder-create {
-  display: flex;
+  display: grid;
   gap: 8px;
+}
+
+.rss-folder-create span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rss-dialog-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 14px;
 }
 
 .rss-prefs-grid {

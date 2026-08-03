@@ -125,6 +125,8 @@ const deleteArchiveButton = document.querySelector("#delete-archive");
 const libraryOrganize = document.querySelector("#library-organize");
 const sidebarMore = document.querySelector("#sidebar-more");
 const sidebarMoreSummary = sidebarMore.querySelector(":scope > summary");
+const rssThemeControls = document.querySelector("#rss-theme-controls");
+const rssThemePicker = document.querySelector("#rss-theme-picker");
 const statusEl = document.querySelector("#status");
 const selectionMenu = document.querySelector("#selection-menu");
 const questionInput = document.querySelector("#question-input");
@@ -152,6 +154,7 @@ const knowledgeTab = document.querySelector("#knowledge-tab");
 const analysisView = document.querySelector("#analysis-view");
 const knowledgeView = document.querySelector("#knowledge-view");
 const annotationList = document.querySelector("#annotation-list");
+const annotationSection = document.querySelector("#annotation-section");
 const knowledgeList = document.querySelector("#knowledge-list");
 const exportCurrentButton = document.querySelector("#export-current");
 const exportAllButton = document.querySelector("#export-all");
@@ -185,6 +188,10 @@ const rssHost = {
     state.document
       ? loadDocument(state.document.id, "saved", { rememberAsLocal: false })
       : Promise.resolve(),
+  openSavedDocument: async (documentId) => {
+    await setSourceMode("local");
+    await loadDocument(documentId, "saved", { rememberAsLocal: true });
+  },
   setStatus,
   getCurrentDocument: () => state.document,
   refreshDocuments: () => loadDocumentList(),
@@ -569,6 +576,13 @@ readingSettingsPanel.addEventListener("click", (event) => {
   updateReadingSettings({ [control]: option.dataset.value });
 });
 
+rssThemeControls.addEventListener("click", (event) => {
+  const option = event.target.closest("button[data-rss-theme]");
+  if (!option) return;
+  updateReadingSettings({ theme: option.dataset.rssTheme });
+  rssThemePicker.open = false;
+});
+
 resetReadingSettingsButton.addEventListener("click", () => {
   state.readingSettings = { ...DEFAULT_READING_SETTINGS };
   applyReadingSettings();
@@ -885,6 +899,11 @@ function applyReadingSettings() {
       button.disabled = Boolean(state.docxPreview && controlName !== "theme");
     }
   }
+  for (const button of rssThemeControls.querySelectorAll("button[data-rss-theme]")) {
+    const active = button.dataset.rssTheme === theme;
+    button.dataset.active = String(active);
+    button.setAttribute("aria-pressed", String(active));
+  }
   saveReadingSettings(window.localStorage, state.readingSettings);
 }
 
@@ -1011,9 +1030,12 @@ function updatePanelToggle(button, options) {
   button.title = label;
   button.setAttribute("aria-label", label);
   button.setAttribute("aria-expanded", String(!options.collapsed));
-  button.querySelector("span").textContent = options.collapsed
-    ? options.expandIcon
-    : options.collapseIcon;
+  const icon = button.querySelector("span");
+  if (icon.classList.contains("aside-toggle-icon")) {
+    icon.classList.toggle("is-flipped", options.collapsed);
+  } else {
+    icon.textContent = options.collapsed ? options.expandIcon : options.collapseIcon;
+  }
 }
 
 async function loadAiStatus() {
@@ -2168,9 +2190,11 @@ function updatePaginationControls() {
   const documentIndex = categoryDocuments.findIndex(
     (document) => Number(document.id) === Number(state.document?.id)
   );
-  pageIndicator.textContent = state.document
-    ? `文档 ${documentIndex + 1}/${categoryDocuments.length} · 页 ${current}/${total}`
-    : `页 ${current}/${total}`;
+  pageIndicator.textContent = state.document?.sourceType === "rss"
+    ? `第 ${current} / ${total} 页`
+    : state.document
+      ? `文档 ${documentIndex + 1}/${categoryDocuments.length} · 页 ${current}/${total}`
+      : `页 ${current}/${total}`;
 
   const previousDocument = getAdjacentDocument(
     state.documents,
@@ -2194,7 +2218,8 @@ function updatePaginationControls() {
   const bookmark = state.document?.annotations?.find(
     (annotation) => annotation.kind === "bookmark" && annotation.pageIndex === state.pageIndex
   );
-  bookmarkPageButton.textContent = bookmark ? "★" : "☆";
+  bookmarkPageButton.classList.toggle("is-active", Boolean(bookmark));
+  bookmarkPageButton.setAttribute("aria-pressed", String(Boolean(bookmark)));
   bookmarkPageButton.title = bookmark ? "取消当前页书签" : "收藏当前页";
   bookmarkPageButton.setAttribute("aria-label", bookmarkPageButton.title);
 }
@@ -2529,6 +2554,7 @@ async function deleteAnnotation(id) {
 
 function renderAnnotations() {
   const annotations = state.document?.annotations || [];
+  annotationSection.hidden = annotations.length === 0;
   if (annotations.length === 0) {
     annotationList.replaceChildren(emptyText(state.document ? "当前文章暂无标注" : "请先选择文章"));
     return;

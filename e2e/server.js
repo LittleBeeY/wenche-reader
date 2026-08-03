@@ -28,7 +28,7 @@ const feedXml = `<?xml version="1.0" encoding="UTF-8"?>
       <guid>e2e-post-1</guid>
       <pubDate>${new Date().toUTCString()}</pubDate>
       <description><![CDATA[<p>关于 Agent 工程的摘要。</p>]]></description>
-      <content:encoded><![CDATA[<p>Agent 工程实践的正文。它讨论了工具调用、上下文管理与评估方法，包含足够的内容用于分页与划词解析测试。</p><p>第二个段落讨论深入解析所需的上下文关系与概念背景。</p>]]></content:encoded>
+      <content:encoded><![CDATA[<p>Agent 工程实践的正文。它讨论了工具调用、上下文管理与评估方法，包含足够的内容用于分页与划词解析测试。</p><p>第二个段落讨论深入解析所需的上下文关系与概念背景，并补充任务拆分、结果校验、失败恢复和人工确认等工程环节，确保测试资讯具备可进入今日精选的完整正文。</p>]]></content:encoded>
     </item>
     <item>
       <title>向量数据库实践</title>
@@ -36,7 +36,7 @@ const feedXml = `<?xml version="1.0" encoding="UTF-8"?>
       <guid>e2e-post-2</guid>
       <pubDate>${new Date(Date.now() - 3600000).toUTCString()}</pubDate>
       <description><![CDATA[<p>向量数据库摘要。</p>]]></description>
-      <content:encoded><![CDATA[<p>向量数据库实践的正文内容。</p>]]></content:encoded>
+      <content:encoded><![CDATA[<p>向量数据库实践的正文内容，介绍索引构建、相似度检索、数据更新和召回评估。</p><p>文章进一步比较不同数据规模下的延迟与准确率，并说明如何通过过滤条件、分片策略和离线评测改善真实应用中的检索质量。</p>]]></content:encoded>
     </item>
   </channel>
 </rss>`;

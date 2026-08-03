@@ -825,6 +825,15 @@ async function handleAiRequest({
       result = await aiProvider.explain(aiInput);
     }
 
+    if (result.finishReason === "length") {
+      const message = "AI 回答达到长度上限，未完整生成，请重试。";
+      if (wantsStream) {
+        writeSse(res, "error", { error: message });
+        return res.end();
+      }
+      return res.status(502).json({ error: message });
+    }
+
     const citations = validateAnswerCitations(result.answer, contextBundle.sources);
     result.answer = citations.answer;
     const usage = result.usage || {};

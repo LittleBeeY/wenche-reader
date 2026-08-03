@@ -46,6 +46,8 @@ export function initRssMode(host) {
     opmlImport: document.querySelector("#rss-opml-import"),
     feedsDialog: document.querySelector("#rss-feeds-dialog"),
     feedsList: document.querySelector("#rss-feeds-manage-list"),
+    folderDialog: document.querySelector("#rss-folder-dialog"),
+    folderDialogStatus: document.querySelector("#rss-folder-dialog-status"),
     newFolderName: document.querySelector("#rss-new-folder-name"),
     prefsDialog: document.querySelector("#rss-prefs-dialog"),
     articleBar: document.querySelector("#rss-article-bar"),
@@ -236,6 +238,8 @@ export function initRssMode(host) {
   }
 
   function feedButton(feed, showUnread) {
+    const row = document.createElement("div");
+    row.className = "rss-feed-item-row";
     const button = navItem(feed.title, state.view.scope === "feed" && state.view.scopeId === feed.id, () => {
       setScope("feed", feed.id);
     });
@@ -244,7 +248,35 @@ export function initRssMode(host) {
     if (feed.disabled) button.classList.add("is-paused");
     if (feed.consecutiveFailures > 0) button.classList.add("has-error");
     if (showUnread && feed.unreadCount > 0) button.appendChild(unreadBadge(feed.unreadCount));
-    return button;
+
+    const unsubscribe = document.createElement("button");
+    unsubscribe.type = "button";
+    unsubscribe.className = "rss-feed-unsubscribe";
+    unsubscribe.textContent = "取消关注";
+    unsubscribe.title = `取消关注「${feed.title}」`;
+    unsubscribe.setAttribute("aria-label", unsubscribe.title);
+    unsubscribe.addEventListener("click", () => unsubscribeFeed(feed));
+
+    row.append(button, unsubscribe);
+    return row;
+  }
+
+  async function unsubscribeFeed(feed) {
+    if (!window.confirm(`确定取消关注「${feed.title}」？已收藏和有标注的内容会保留。`)) return;
+    try {
+      await api(`/api/rss/feeds/${feed.id}`, { method: "DELETE" });
+      if (state.view.scope === "feed" && state.view.scopeId === feed.id) {
+        state.view.scope = "inbox";
+        state.view.scopeId = null;
+        persistView();
+      }
+      await Promise.all([loadNav(), loadEntries({ reset: true }), updateRefreshStatus()]);
+      if (state.activeEntry?.feedId === feed.id) renderArticleBar();
+      if (els.feedsDialog.open) await renderFeedsManage();
+      host.setStatus(`已取消关注「${feed.title}」。`);
+    } catch (error) {
+      host.setStatus(error.message, true);
+    }
   }
 
   function unreadBadge(count) {
@@ -321,7 +353,7 @@ export function initRssMode(host) {
       return;
     }
     state.brief = await response.json();
-    state.entries = state.brief.entries.map((item) => ({ ...item.entry, briefReason: item.reason, briefSection: item.section }));
+    state.entries = filteredBriefEntries();
     state.nextCursor = null;
   }
 
@@ -329,7 +361,7 @@ export function initRssMode(host) {
     els.briefBanner.querySelector("button")?.setAttribute("disabled", "true");
     try {
       state.brief = await api("/api/rss/briefs/today", { method: "POST", body: { force: true } });
-      state.entries = state.brief.entries.map((item) => ({ ...item.entry, briefReason: item.reason, briefSection: item.section }));
+      state.entries = filteredBriefEntries();
       renderList();
     } catch (error) {
       host.setStatus(error.message, true);
@@ -485,7 +517,7 @@ export function initRssMode(host) {
 
     const summary = document.createElement("p");
     summary.className = "rss-entry-summary";
-    summary.textContent = snippetOf(entry, state.view.view === "cards" ? 80 : 140);
+    summary.textContent = snippetOf(entry, state.view.view === "cards" ? 260 : 140);
 
     const reason = state.view.scope === "today"
       ? entry.briefReason || entry.recommendationReason
@@ -521,6 +553,13 @@ export function initRssMode(host) {
     if (reasonEl) item.append(reasonEl);
     item.append(actions);
     return item;
+  }
+
+  function filteredBriefEntries() {
+    if (!state.brief) return [];
+    return state.brief.entries
+      .map((item) => ({ ...item.entry, briefReason: item.reason, briefSection: item.section }))
+      .filter((entry) => state.view.read === "all" || entry.readState === state.view.read);
   }
 
   function createEntryThumbnail(entry, variant) {
@@ -725,14 +764,45 @@ export function initRssMode(host) {
     if (!entry) return;
     const contentStatus = entry.contentSource === "extracted"
       ? "已提取全文"
-      : entry.contentHtml
-        ? "RSS 全文"
-        : "仅摘要";
+      : String(entry.contentText || "").trim().length >= 80
+        ? "RSS 正文"
+        : "仅短摘要";
     els.articleMeta.replaceChildren();
-    const source = document.createElement("span");
-    source.className = "rss-article-source";
-    source.textContent = `${entry.feedTitle}${entry.author ? ` · ${entry.author}` : ""} · ${formatDateTime(entry.publishedAt || entry.receivedAt)} · 约 ${entry.estimatedReadMinutes} 分钟 · ${contentStatus}`;
-    els.articleMeta.appendChild(source);
+    const feed = state.nav.feeds.find((item) => Number(item.id) === Number(entry.feedId));
+    if (entry.feedTitle) {
+      const sourceGroup = document.createElement("span");
+      sourceGroup.className = "rss-article-source-group";
+
+      const source = document.createElement("span");
+      source.className = "rss-article-source";
+      source.textContent = entry.feedTitle;
+      sourceGroup.appendChild(source);
+
+      if (feed) {
+        const unsubscribe = document.createElement("button");
+        unsubscribe.type = "button";
+        unsubscribe.className = "rss-article-unsubscribe";
+        unsubscribe.textContent = "取消关注";
+        unsubscribe.title = `取消关注「${feed.title}」`;
+        unsubscribe.setAttribute("aria-label", unsubscribe.title);
+        unsubscribe.addEventListener("click", () => unsubscribeFeed(feed));
+        sourceGroup.appendChild(unsubscribe);
+      }
+      els.articleMeta.appendChild(sourceGroup);
+    }
+    const metaItems = [
+      ["rss-article-author", entry.author],
+      ["rss-article-date", formatDateTime(entry.publishedAt || entry.receivedAt)],
+      ["rss-article-duration", `约 ${entry.estimatedReadMinutes} 分钟`],
+      ["rss-article-content-status", contentStatus]
+    ];
+    for (const [className, text] of metaItems) {
+      if (!text) continue;
+      const item = document.createElement("span");
+      item.className = className;
+      item.textContent = text;
+      els.articleMeta.appendChild(item);
+    }
 
     els.articleOrigin.href = entry.canonicalUrl || "#";
     els.articleOrigin.hidden = !entry.canonicalUrl;
@@ -740,14 +810,25 @@ export function initRssMode(host) {
     els.articleBar.querySelectorAll("[data-rss-action]").forEach((button) => {
       const action = button.dataset.rssAction;
       if (action === "star") {
-        button.textContent = entry.starred ? "★" : "☆";
+        const label = button.querySelector("[data-rss-action-label]");
+        if (label) label.textContent = entry.starred ? "已收藏" : "收藏";
         button.classList.toggle("is-on", entry.starred);
         button.title = entry.starred ? "取消收藏文章" : "收藏文章";
         button.setAttribute("aria-label", button.title);
       } else if (action === "later") {
+        const label = button.querySelector("[data-rss-action-label]");
+        if (label) label.textContent = entry.readLater ? "移出稍后读" : "稍后读";
         button.classList.toggle("is-on", entry.readLater);
         button.title = entry.readLater ? "移出稍后读" : "稍后读";
         button.setAttribute("aria-label", button.title);
+      } else if (action === "save") {
+        const savedToLibrary = Boolean(entry.isLibraryVisible);
+        const label = button.querySelector("[data-rss-action-label]");
+        if (label) label.textContent = savedToLibrary ? "查看文档" : "保存到文档";
+        button.title = savedToLibrary ? "在本地文档库中查看" : "加入本地文档库";
+        button.setAttribute("aria-label", button.title);
+      } else if (action === "extract") {
+        button.hidden = entry.contentSource === "extracted" || !entry.canonicalUrl;
       }
     });
   }
@@ -778,10 +859,19 @@ export function initRssMode(host) {
           host.setStatus("全文已提取。");
         }
       } else if (action === "save") {
+        if (entry.isLibraryVisible && entry.documentId) {
+          await host.openSavedDocument(entry.documentId);
+          host.setStatus("已打开本地文档库中的文章。");
+          return;
+        }
         const saved = await api(`/api/rss/entries/${entry.id}/save-to-library`, { method: "POST", body: {} });
-        host.setStatus("已保存到本地文档。");
         await host.refreshDocuments();
-        state.activeEntry = { ...state.activeEntry, documentId: saved.documentId };
+        state.activeEntry = {
+          ...state.activeEntry,
+          documentId: saved.documentId,
+          isLibraryVisible: true
+        };
+        host.setStatus("已加入左侧“本地文档库”，可再次点击“查看文档”打开。");
       }
       renderArticleBar();
       loadEntries({ reset: true }).catch(() => {});
@@ -1007,15 +1097,22 @@ export function initRssMode(host) {
       intervalInput.title = "刷新间隔（分钟）";
       intervalInput.setAttribute("aria-label", "刷新间隔（分钟）");
 
+      const fullTextControl = document.createElement("label");
+      fullTextControl.className = "rss-feed-fulltext";
+      const fullTextTitle = document.createElement("span");
+      fullTextTitle.textContent = "文章正文";
       const fullTextSelect = document.createElement("select");
       fullTextSelect.setAttribute("aria-label", "正文获取方式");
-      for (const [value, label] of [["feed", "使用 Feed 正文"], ["extract_on_open", "打开时提取全文"]]) {
+      for (const [value, label] of [["feed", "使用 RSS 正文（默认）"], ["extract_on_open", "打开时自动提取原文"]]) {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = label;
         fullTextSelect.appendChild(option);
       }
       fullTextSelect.value = feed.fullTextMode;
+      const fullTextHint = document.createElement("small");
+      fullTextHint.textContent = "适合只提供摘要的订阅源；仅在打开文章时请求原网站。";
+      fullTextControl.append(fullTextTitle, fullTextSelect, fullTextHint);
 
       const aiExcludedLabel = document.createElement("label");
       aiExcludedLabel.className = "rss-feed-check";
@@ -1074,11 +1171,7 @@ export function initRssMode(host) {
       remove.type = "button";
       remove.textContent = "删除";
       remove.className = "is-danger";
-      remove.addEventListener("click", async () => {
-        if (!window.confirm(`确定删除订阅「${feed.title}」？已收藏和有标注的内容会保留。`)) return;
-        await api(`/api/rss/feeds/${feed.id}`, { method: "DELETE" }).catch((error) => host.setStatus(error.message, true));
-        await Promise.all([renderFeedsManage(), loadNav(), loadEntries({ reset: true })]);
-      });
+      remove.addEventListener("click", () => unsubscribeFeed(feed));
 
       const error = document.createElement("p");
       error.className = "rss-feed-error";
@@ -1092,7 +1185,7 @@ export function initRssMode(host) {
         folderSelect,
         prioritySelect,
         intervalInput,
-        fullTextSelect,
+        fullTextControl,
         aiExcludedLabel,
         save,
         pause,
@@ -1101,6 +1194,33 @@ export function initRssMode(host) {
       );
       row.append(controls, error);
       list.appendChild(row);
+    }
+  }
+
+  function openFolderDialog() {
+    els.newFolderName.value = "";
+    els.folderDialogStatus.hidden = true;
+    els.folderDialogStatus.textContent = "";
+    els.folderDialog.showModal();
+    els.newFolderName.focus();
+  }
+
+  async function createFolder() {
+    const name = els.newFolderName.value.trim();
+    if (!name) {
+      els.folderDialogStatus.textContent = "请输入分组名称。";
+      els.folderDialogStatus.hidden = false;
+      els.newFolderName.focus();
+      return;
+    }
+    try {
+      await api("/api/rss/folders", { method: "POST", body: { name } });
+      els.folderDialog.close();
+      host.setStatus(`已创建订阅分组“${name}”。`);
+      await loadNav();
+    } catch (error) {
+      els.folderDialogStatus.textContent = error.message;
+      els.folderDialogStatus.hidden = false;
     }
   }
 
@@ -1228,6 +1348,7 @@ export function initRssMode(host) {
     button.addEventListener("click", () => setScope(button.dataset.rssScope));
   });
   document.querySelector("#rss-nav-add").addEventListener("click", () => openAddDialog());
+  document.querySelector("#rss-nav-create-folder").addEventListener("click", () => openFolderDialog());
   document.querySelector("#rss-nav-manage").addEventListener("click", () => {
     renderFeedsManage();
     els.feedsDialog.showModal();
@@ -1271,7 +1392,10 @@ export function initRssMode(host) {
   });
   els.articleBar.addEventListener("click", (event) => {
     const action = event.target.closest("[data-rss-action]")?.dataset.rssAction;
-    if (action) articleAction(action);
+    if (action) {
+      els.articleBar.querySelector(".rss-article-more")?.removeAttribute("open");
+      articleAction(action);
+    }
   });
   els.quickActions.addEventListener("click", (event) => {
     const kind = event.target.closest("[data-rss-ai]")?.dataset.rssAi;
@@ -1293,15 +1417,12 @@ export function initRssMode(host) {
     window.open("/api/rss/opml/export", "_blank", "noopener");
   });
   document.querySelector("#rss-feeds-close").addEventListener("click", () => els.feedsDialog.close());
-  document.querySelector("#rss-create-folder").addEventListener("click", async () => {
-    const name = els.newFolderName.value.trim();
-    if (!name) return;
-    try {
-      await api("/api/rss/folders", { method: "POST", body: { name } });
-      els.newFolderName.value = "";
-      await Promise.all([renderFeedsManage(), loadNav()]);
-    } catch (error) {
-      host.setStatus(error.message, true);
+  document.querySelector("#rss-folder-cancel").addEventListener("click", () => els.folderDialog.close());
+  document.querySelector("#rss-create-folder").addEventListener("click", () => createFolder());
+  els.newFolderName.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createFolder();
     }
   });
   document.querySelector("#rss-prefs-cancel").addEventListener("click", () => els.prefsDialog.close());

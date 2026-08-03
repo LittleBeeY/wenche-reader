@@ -124,9 +124,9 @@ async function api(baseUrl, pathName, { method = "GET", body } = {}) {
 }
 
 const sampleEntries = [
-  { id: "p1", title: "Agent 工程实践", body: "Agent 工程的正文内容，讨论工具调用与上下文管理。" },
-  { id: "p2", title: "向量数据库对比", body: "不同向量数据库的对比分析与实测数据。" },
-  { id: "p3", title: "深度阅读方法", body: "如何更好地深度阅读长文与论文。" }
+  { id: "p1", title: "Agent 工程实践", body: "Agent 工程的正文内容，讨论工具调用、上下文管理、评估方法与实际落地过程，并提供足够的背景信息和具体案例来支持阅读判断。".repeat(2) },
+  { id: "p2", title: "向量数据库对比", body: "不同向量数据库的对比分析与实测数据，覆盖索引性能、召回质量、维护成本和使用边界，并解释测试环境与最终结论。".repeat(2) },
+  { id: "p3", title: "深度阅读方法", body: "如何更好地深度阅读长文与论文，包括提出问题、建立结构、记录证据、复核结论和形成个人知识体系的完整实践方法。".repeat(2) }
 ];
 
 test("discovers a feed from a website and adds it", async (t) => {
@@ -412,6 +412,34 @@ test("creates an idempotent hidden reading snapshot and keeps it after unsubscri
   assert.equal(nav.json.feeds.length, 1);
 });
 
+test("renders feed text without html tags as a readable paragraph", async (t) => {
+  const { baseUrl, feedUrl, app } = await withTestServer(t, {
+    feedState: { entries: [sampleEntries[0]] }
+  });
+  await api(baseUrl, "/api/rss/feeds", {
+    method: "POST",
+    body: { feedUrl: `${feedUrl}/feed.xml` }
+  });
+  const entries = await api(baseUrl, "/api/rss/entries?read=all");
+  const entryId = entries.json.entries[0].id;
+  app.locals.storage.db
+    .prepare("UPDATE rss_entries SET summary_html = ?, content_html = ?, content_text = ? WHERE id = ?")
+    .run("订阅源提供的纯文本短摘要", "订阅源提供的纯文本短摘要", "订阅源提供的纯文本短摘要", entryId);
+
+  const opened = await api(baseUrl, `/api/rss/entries/${entryId}/open`, { method: "POST" });
+  const document = await api(baseUrl, `/api/documents/${opened.json.documentId}`);
+
+  assert.ok(document.json.blocks.some((block) => block.type === "paragraph"));
+  assert.match(document.json.blocks.map((block) => block.text).join(" "), /订阅源提供的纯文本短摘要/);
+
+  app.locals.storage.db
+    .prepare("DELETE FROM blocks WHERE document_id = ? AND type != 'heading'")
+    .run(opened.json.documentId);
+  const reopened = await api(baseUrl, `/api/rss/entries/${entryId}/open`, { method: "POST" });
+  const repaired = await api(baseUrl, `/api/documents/${reopened.json.documentId}`);
+  assert.match(repaired.json.blocks.map((block) => block.text).join(" "), /订阅源提供的纯文本短摘要/);
+});
+
 test("repairs protected snapshot image html without changing stable block ids", async (t) => {
   const { baseUrl, feedUrl, app } = await withTestServer(t, {
     feedState: { entries: [sampleEntries[0]] }
@@ -457,6 +485,8 @@ test("saves an entry snapshot to the library on demand", async (t) => {
   const documents = await api(baseUrl, "/api/documents");
   assert.ok(documents.json.documents.some((document) => document.id === saved.json.documentId));
   assert.equal(saved.json.document.category, "AI 论文");
+  const entry = await api(baseUrl, `/api/rss/entries/${entries.json.entries[0].id}`);
+  assert.equal(entry.json.isLibraryVisible, 1);
 });
 
 test("extracts full text on demand", async (t) => {
@@ -469,7 +499,7 @@ test("extracts full text on demand", async (t) => {
     }],
     articleBody: "这是第一次提取出来的完整正文，包含明确的第一版标记。"
   };
-  const { baseUrl, feedUrl } = await withTestServer(t, { feedState });
+  const { baseUrl, feedUrl, app } = await withTestServer(t, { feedState });
   feedState.entries[0].link = `${feedUrl}/article`;
   await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml` } });
   const entries = await api(baseUrl, "/api/rss/entries?read=all");
@@ -480,6 +510,10 @@ test("extracts full text on demand", async (t) => {
   assert.equal(response.status, 200);
   assert.equal(response.json.entry.contentSource, "extracted");
   assert.equal(response.json.snapshot.updated, true);
+
+  app.locals.storage.db.prepare("UPDATE rss_entries SET canonical_url = '' WHERE id = ?").run(entry.id);
+  const recoveredOrigin = await api(baseUrl, `/api/rss/entries/${entry.id}`);
+  assert.equal(recoveredOrigin.json.canonicalUrl, `${feedUrl}/article`);
 
   const document = await api(baseUrl, `/api/documents/${opened.json.documentId}`);
   assert.match(document.json.blocks.map((block) => block.text).join(" "), /第一版标记/);
@@ -596,7 +630,7 @@ test("repairs legacy broken article images when an old entry is opened", async (
 });
 
 test("generates a stable daily brief with reasons", async (t) => {
-  const { baseUrl, feedUrl } = await withTestServer(t, { feedState: { entries: sampleEntries } });
+  const { baseUrl, feedUrl, app } = await withTestServer(t, { feedState: { entries: sampleEntries } });
   await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml`, priority: 1 } });
   await api(baseUrl, "/api/rss/preferences", {
     method: "PATCH",
@@ -620,6 +654,13 @@ test("generates a stable daily brief with reasons", async (t) => {
 
   const todayScope = await api(baseUrl, "/api/rss/entries?scope=today");
   assert.equal(todayScope.json.entries.length, brief.json.entries.length);
+
+  const thinEntryId = brief.json.entries[0].entryId;
+  app.locals.storage.db
+    .prepare("UPDATE rss_entries SET content_text = ? WHERE id = ?")
+    .run("只剩短摘要", thinEntryId);
+  const filteredBrief = await api(baseUrl, "/api/rss/briefs/today");
+  assert.ok(!filteredBrief.json.entries.some((item) => item.entryId === thinEntryId));
 });
 
 test("handles opml preview, import and export", async (t) => {

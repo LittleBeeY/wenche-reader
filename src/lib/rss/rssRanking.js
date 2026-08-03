@@ -12,6 +12,14 @@ export const RANKING_WEIGHTS = Object.freeze({
   formatPreference: 0.05
 });
 
+export const MIN_BRIEF_CONTENT_CHARS = 80;
+
+export function hasSubstantialContent(entry, minimum = MIN_BRIEF_CONTENT_CHARS) {
+  const measuredLength = Number(entry?.contentLength);
+  if (Number.isFinite(measuredLength)) return measuredLength >= minimum;
+  return String(entry?.contentText || "").replace(/\s+/g, " ").trim().length >= minimum;
+}
+
 export function scoreEntry({ entry, analysis, preferences, now = Date.now() }) {
   const signals = {
     topicRelevance: topicRelevance({ entry, analysis, preferences }),
@@ -159,7 +167,9 @@ export function normalizeTopics(topics) {
  * 生成今日精选：同一来源默认不超过 2 条，保留 1 条探索性内容。
  */
 export function buildBriefSelection(scoredEntries, { total = 10, perFeedMax = 2, exploreItem = true } = {}) {
-  const sorted = [...scoredEntries].sort((a, b) => b.priority - a.priority);
+  const sorted = scoredEntries
+    .filter((item) => hasSubstantialContent(item.entry))
+    .sort((a, b) => b.priority - a.priority);
   const picked = [];
   const feedCounts = new Map();
   const focusCount = Math.min(3, Math.max(1, Math.floor(total * 0.3)));

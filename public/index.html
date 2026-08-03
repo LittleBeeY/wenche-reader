@@ -26,7 +26,13 @@
             aria-label="收起导航栏"
             aria-controls="document-sidebar"
             aria-expanded="true"
-          ><span aria-hidden="true">‹</span></button>
+          >
+            <span class="aside-toggle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="m14.5 5-7 7 7 7"></path>
+              </svg>
+            </span>
+          </button>
         </div>
 
         <div class="library-source-switch" role="tablist" aria-label="内容来源">
@@ -74,7 +80,10 @@
             </summary>
             <div class="rss-nav-heading-row">
               <span class="rss-nav-hint">按资料夹收纳</span>
-              <button id="rss-nav-add" type="button" class="rss-nav-mini" title="添加订阅" aria-label="添加订阅">＋</button>
+              <div class="rss-nav-actions">
+                <button id="rss-nav-create-folder" type="button" class="rss-nav-mini" title="新建订阅分组">新建分组</button>
+                <button id="rss-nav-add" type="button" class="rss-nav-mini" title="添加订阅">添加订阅</button>
+              </div>
             </div>
             <div id="rss-feed-tree" class="rss-feed-tree"></div>
           </details>
@@ -89,8 +98,33 @@
           </details>
           <div class="rss-nav-footer">
             <span id="rss-last-updated" class="rss-last-updated" title="上次更新时间"></span>
-            <button id="rss-refresh-all" type="button" class="rss-nav-mini" title="立即刷新" aria-label="立即刷新">⟳ 刷新</button>
-            <button id="rss-open-prefs" type="button" class="rss-nav-mini" title="资讯设置" aria-label="资讯设置">⚙ 设置</button>
+            <div class="rss-footer-actions">
+              <details id="rss-theme-picker" class="rss-theme-picker">
+                <summary class="rss-footer-command" title="切换资讯主题" aria-label="切换资讯主题">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+                  <span>主题</span>
+                </summary>
+                <div id="rss-theme-controls" class="rss-theme-controls" role="group" aria-label="资讯主题">
+                  <button type="button" data-rss-theme="light" aria-pressed="true" title="明亮主题">
+                    <span class="theme-swatch theme-light" aria-hidden="true"></span><span>明亮</span>
+                  </button>
+                  <button type="button" data-rss-theme="eye" aria-pressed="false" title="护眼主题">
+                    <span class="theme-swatch theme-eye" aria-hidden="true"></span><span>护眼</span>
+                  </button>
+                  <button type="button" data-rss-theme="night" aria-pressed="false" title="夜间主题">
+                    <span class="theme-swatch theme-night" aria-hidden="true"></span><span>夜间</span>
+                  </button>
+                </div>
+              </details>
+              <button id="rss-refresh-all" type="button" class="rss-footer-command" title="立即抓取所有订阅源的最新资讯" aria-label="立即刷新资讯">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 8V4m0 0h-4m4 0-3.1 3.1A7 7 0 1 0 19 12"></path></svg>
+                <span>刷新</span>
+              </button>
+              <button id="rss-open-prefs" type="button" class="rss-footer-command" title="资讯设置" aria-label="资讯设置">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.2 2.2-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3.2v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-2.2-2.2.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5v-3.2h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.2-2.2.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3.5h3.2v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.2 2.2-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.2V13h-.2a1.7 1.7 0 0 0-1.5 1Z"></path></svg>
+                <span>设置</span>
+              </button>
+            </div>
           </div>
         </nav>
 
@@ -100,7 +134,11 @@
           title="支持批量添加 TXT、Markdown、HTML、PDF、DOCX 和 EPUB"
         >
           <input id="file-input" type="file" accept=".txt,.md,.markdown,.html,.htm,.pdf,.docx,.epub" multiple />
-          <span class="upload-icon" aria-hidden="true">+</span>
+          <span class="upload-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </span>
           <span class="upload-title">添加文档</span>
           <span class="upload-types">可一次选择多个文件</span>
         </label>
@@ -230,15 +268,67 @@
       <section class="reader-shell">
         <div class="reader-toolbar">
           <div id="rss-article-bar" class="rss-article-bar" hidden>
-            <button id="rss-article-back" type="button" class="rss-article-back" title="返回资讯列表" aria-label="返回资讯列表">‹</button>
+            <button id="rss-article-back" type="button" class="rss-article-back" title="返回资讯列表" aria-label="返回资讯列表">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 6-6 6 6 6"></path>
+              </svg>
+            </button>
             <div class="rss-article-actions" role="group" aria-label="文章操作">
-              <button type="button" data-rss-action="unread" title="标记未读" aria-label="标记未读">✉</button>
-              <button type="button" data-rss-action="star" title="收藏文章" aria-label="收藏文章">☆</button>
-              <button type="button" data-rss-action="later" title="稍后读" aria-label="稍后读">🕑</button>
-              <button type="button" data-rss-action="hide" title="不感兴趣" aria-label="不感兴趣">⊘</button>
-              <button type="button" data-rss-action="extract" title="提取全文" aria-label="提取全文">⤓</button>
-              <button type="button" data-rss-action="save" title="保存到文档" aria-label="保存到文档">⇥</button>
-              <a id="rss-article-origin" href="#" target="_blank" rel="noopener noreferrer" title="打开原文" aria-label="打开原文">↗</a>
+              <button type="button" class="rss-action-primary" data-rss-action="star" title="收藏文章" aria-label="收藏文章">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 4.5h10v15l-5-3.15L7 19.5z"></path>
+                </svg>
+                <span data-rss-action-label>收藏</span>
+              </button>
+              <a id="rss-article-origin" class="rss-action-primary" href="#" target="_blank" rel="noopener noreferrer" title="打开原文" aria-label="打开原文">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M14 5h5v5M19 5l-8 8M18 13v5H6V6h5"></path>
+                </svg>
+                <span>原文</span>
+              </a>
+              <details class="rss-article-more">
+                <summary title="更多文章操作" aria-label="更多文章操作">
+                  <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1"></circle>
+                    <circle cx="12" cy="12" r="1"></circle>
+                    <circle cx="19" cy="12" r="1"></circle>
+                  </svg>
+                  <span>更多</span>
+                </summary>
+                <div class="rss-article-more-menu" role="menu" aria-label="更多文章操作">
+                  <button type="button" data-rss-action="unread" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16v11H4zM4 8l8 6 8-6"></path>
+                    </svg>
+                    <span data-rss-action-label>标为未读</span>
+                  </button>
+                  <button type="button" data-rss-action="later" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="8"></circle>
+                      <path d="M12 8v5l3 2"></path>
+                    </svg>
+                    <span data-rss-action-label>稍后读</span>
+                  </button>
+                  <button type="button" data-rss-action="extract" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"></path>
+                    </svg>
+                    <span data-rss-action-label>提取全文</span>
+                  </button>
+                  <button type="button" data-rss-action="save" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 4h10l4 4v12H5zM8 4v6h8V5M8 16h8"></path>
+                    </svg>
+                    <span data-rss-action-label>保存到文档</span>
+                  </button>
+                  <button type="button" class="rss-action-muted" data-rss-action="hide" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 5l14 14M9.5 4.8A9.7 9.7 0 0 1 12 4c5.5 0 9 8 9 8a17 17 0 0 1-2.1 3.4M6.2 6.2C4.1 8 3 12 3 12s3.5 8 9 8a8.8 8.8 0 0 0 3.1-.6M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+                    </svg>
+                    <span data-rss-action-label>减少此类推荐</span>
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
           <div class="reader-heading">
@@ -248,13 +338,26 @@
           </div>
           <div class="reader-search" role="search">
             <input id="reader-search-input" type="search" placeholder="搜索当前文章" aria-label="搜索当前文章" />
-            <button id="previous-match" type="button" title="上一个匹配" aria-label="上一个匹配" disabled>↑</button>
+            <button id="previous-match" type="button" title="上一个匹配" aria-label="上一个匹配" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="10.25" cy="10.25" r="6"></circle>
+                <path d="m14.75 14.75 5 5M7.05 11.05l3.2-3.2 3.2 3.2"></path>
+              </svg>
+            </button>
             <span id="match-indicator">0 / 0</span>
-            <button id="next-match" type="button" title="下一个匹配" aria-label="下一个匹配" disabled>↓</button>
+            <button id="next-match" type="button" title="下一个匹配" aria-label="下一个匹配" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="10.25" cy="10.25" r="6"></circle>
+                <path d="m14.75 14.75 5 5M7.05 9.45l3.2 3.2 3.2-3.2"></path>
+              </svg>
+            </button>
           </div>
           <div class="page-controls" aria-label="分页">
             <details id="reading-settings" class="reading-settings">
-              <summary title="阅读设置" aria-label="阅读设置"><span aria-hidden="true">Aa</span></summary>
+              <summary title="阅读设置" aria-label="阅读设置">
+                <span class="type-control-icon" aria-hidden="true"><b>A</b><small>a</small></span>
+                <span class="reading-settings-label">阅读</span>
+              </summary>
               <div class="reading-settings-popover" role="group" aria-label="阅读设置选项">
                 <div class="reading-setting-row">
                   <span>字号</span>
@@ -291,11 +394,27 @@
                 <button id="reset-reading-settings" class="reading-reset" type="button">恢复默认</button>
               </div>
             </details>
-            <button id="immersive-toggle" class="icon-command immersive-command" type="button" title="进入沉浸阅读" aria-label="进入沉浸阅读" aria-pressed="false">⛶</button>
-            <button id="bookmark-page" class="icon-command" type="button" title="收藏当前页" aria-label="收藏当前页" disabled>☆</button>
-            <button id="prev-page" type="button">上一页</button>
+            <button id="immersive-toggle" class="icon-command immersive-command" type="button" title="进入沉浸阅读" aria-label="进入沉浸阅读" aria-pressed="false">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
+              </svg>
+            </button>
+            <button id="bookmark-page" class="icon-command bookmark-command" type="button" title="收藏当前页" aria-label="收藏当前页" aria-pressed="false" disabled>
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 4.5h10v15l-5-3.15L7 19.5z"></path>
+              </svg>
+            </button>
+            <button id="prev-page" type="button" title="上一页" aria-label="上一页">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m14.5 6-6 6 6 6"></path>
+              </svg>
+            </button>
             <span id="page-indicator">0 / 0</span>
-            <button id="next-page" type="button">下一页</button>
+            <button id="next-page" type="button" title="下一页" aria-label="下一页">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9.5 6 6 6-6 6"></path>
+              </svg>
+            </button>
           </div>
           <div id="status" class="status" role="status"></div>
         </div>
@@ -390,7 +509,7 @@
             <button id="export-current" type="button" title="导出当前文档全部页面的标注与已沉淀回答" disabled>导出本篇沉淀</button>
             <button id="export-all" type="button" title="导出所有文档的标注与已沉淀回答">导出全部沉淀</button>
           </div>
-          <section class="knowledge-section">
+          <section id="annotation-section" class="knowledge-section">
             <div class="answer-toolbar"><span>当前文章标注</span></div>
             <div id="annotation-list" class="knowledge-list"></div>
           </section>
@@ -448,12 +567,24 @@
       <form method="dialog">
         <h2>管理订阅源</h2>
         <div id="rss-feeds-manage-list" class="rss-feeds-manage-list"></div>
-        <div class="rss-folder-create">
-          <input id="rss-new-folder-name" type="text" maxlength="80" placeholder="新建订阅分组名称" aria-label="新建订阅分组名称" />
-          <button type="button" id="rss-create-folder">创建分组</button>
-        </div>
         <div class="dialog-actions">
           <button value="cancel" type="button" id="rss-feeds-close">完成</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rss-folder-dialog" class="rss-dialog">
+      <form method="dialog">
+        <h2>新建订阅分组</h2>
+        <p class="rss-dialog-note">分组仅用于收纳订阅源，可随时新建、重命名或删除空分组。</p>
+        <label class="rss-folder-create">
+          <span>分组名称</span>
+          <input id="rss-new-folder-name" type="text" maxlength="80" placeholder="例如：设计、创业、播客" aria-label="新建订阅分组名称" />
+        </label>
+        <p id="rss-folder-dialog-status" class="rss-dialog-status" role="status" hidden></p>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="rss-folder-cancel">取消</button>
+          <button type="button" id="rss-create-folder">创建分组</button>
         </div>
       </form>
     </dialog>

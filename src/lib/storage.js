@@ -1338,7 +1338,7 @@ export class Storage {
         SELECT e.id, e.feed_id AS feedId, f.title AS feedTitle, f.priority AS feedPriority,
           f.site_url AS feedSiteUrl, f.icon_url AS feedIconUrl, f.full_text_mode AS feedFullTextMode,
           f.ai_excluded AS feedAiExcluded, f.deleted_at AS feedDeletedAt,
-          e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
+          e.guid, COALESCE(NULLIF(e.canonical_url, ''), NULLIF(d.source_url, '')) AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.content_html AS contentHtml, e.content_text AS contentText,
           e.content_hash AS contentHash, e.content_source AS contentSource,
@@ -1346,9 +1346,11 @@ export class Storage {
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
+          COALESCE(d.is_library_visible, 0) AS isLibraryVisible,
           e.created_at AS createdAt, e.updated_at AS updatedAt
         FROM rss_entries e
         JOIN rss_feeds f ON f.id = e.feed_id
+        LEFT JOIN documents d ON d.id = e.document_id
         WHERE e.id = ?
       `)
       .get(id);
@@ -1438,7 +1440,7 @@ export class Storage {
           e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.thumbnail_url AS thumbnailUrl, e.language,
-          e.content_source AS contentSource,
+          e.content_source AS contentSource, length(trim(e.content_text)) AS contentLength,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,
@@ -1487,7 +1489,7 @@ export class Storage {
           e.guid, e.canonical_url AS canonicalUrl, e.title, e.author,
           e.published_at AS publishedAt, e.received_at AS receivedAt,
           e.summary_html AS summaryHtml, e.thumbnail_url AS thumbnailUrl, e.language,
-          e.content_source AS contentSource,
+          e.content_source AS contentSource, length(trim(e.content_text)) AS contentLength,
           e.estimated_read_minutes AS estimatedReadMinutes,
           e.read_state AS readState, e.starred, e.read_later AS readLater, e.hidden,
           e.read_progress AS readProgress, e.document_id AS documentId,

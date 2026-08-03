@@ -117,7 +117,7 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   await page.locator("#annotation-dialog button[type='submit']").click();
 
   await page.locator("#bookmark-page").click();
-  await expect(page.locator("#bookmark-page")).toHaveText("★");
+  await expect(page.locator("#bookmark-page")).toHaveAttribute("aria-pressed", "true");
 
   await selectText(page, "Important concept");
   await expect(page.locator("#ai-scope")).toHaveValue("selection");
@@ -138,6 +138,14 @@ test("reads complex HTML and persists highlights, notes, bookmarks, and AI answe
   await page.locator("#knowledge-tab").click();
   await expect(page.locator("#annotation-list .knowledge-item")).toHaveCount(3);
   await expect(page.locator("#knowledge-list .knowledge-item")).toHaveCount(1);
+  const knowledgeItemsOverlap = await page.locator("#knowledge-view").evaluate((view) => {
+    const items = [...view.querySelectorAll(".knowledge-item")];
+    return items.some((item, index) => {
+      const previous = items[index - 1];
+      return previous && previous.getBoundingClientRect().bottom > item.getBoundingClientRect().top;
+    });
+  });
+  expect(knowledgeItemsOverlap).toBe(false);
 
   const downloadPromise = page.waitForEvent("download");
   await page.locator("#export-current").click();

@@ -26,7 +26,7 @@ const MODE_INSTRUCTIONS = {
 
 const MODE_GENERATION = Object.freeze({
   direct: Object.freeze({ temperature: 0.1, maxTokens: 700 }),
-  deep: Object.freeze({ temperature: 0.2, maxTokens: 2200 }),
+  deep: Object.freeze({ temperature: 0.2, maxTokens: 3200 }),
   custom: Object.freeze({ temperature: 0.2, maxTokens: 1600 })
 });
 
@@ -116,6 +116,7 @@ function buildMockResult(input, answer = buildMockAnswer(input)) {
     model: "mock",
     promptVersion: AI_PROMPT_VERSION,
     answer,
+    finishReason: "stop",
     usage: estimateUsage(buildExplainMessages(input), answer),
     latencyMs: 1,
     firstTokenMs: 1
@@ -209,6 +210,7 @@ async function requestOpenAiCompletion({ apiKey, baseUrl, model, input, onDelta 
       model,
       promptVersion: AI_PROMPT_VERSION,
       answer,
+      finishReason: payload.choices?.[0]?.finish_reason || "",
       usage: normalizeUsage(payload.usage),
       latencyMs,
       firstTokenMs: latencyMs
@@ -221,6 +223,7 @@ async function requestOpenAiCompletion({ apiKey, baseUrl, model, input, onDelta 
     model,
     promptVersion: AI_PROMPT_VERSION,
     answer: streamed.answer.trim() || "模型没有返回内容。",
+    finishReason: streamed.finishReason,
     usage: streamed.usage,
     latencyMs: Math.max(1, Date.now() - startedAt),
     firstTokenMs: streamed.firstTokenMs
@@ -239,6 +242,7 @@ async function readOpenAiStreamResult(response, onDelta, startedAt) {
   let answer = "";
   let usage = { inputTokens: 0, outputTokens: 0 };
   let firstTokenMs = 0;
+  let finishReason = "";
 
   const processLine = async (line) => {
     const trimmed = line.trim();
@@ -247,6 +251,10 @@ async function readOpenAiStreamResult(response, onDelta, startedAt) {
     if (!data || data === "[DONE]") return data === "[DONE]";
     const payload = JSON.parse(data);
     if (payload.usage) usage = normalizeUsage(payload.usage);
+    const candidateFinishReason = payload.choices?.[0]?.finish_reason;
+    if (typeof candidateFinishReason === "string" && candidateFinishReason) {
+      finishReason = candidateFinishReason;
+    }
     const delta = payload.choices?.[0]?.delta?.content || "";
     if (delta) {
       if (!firstTokenMs) firstTokenMs = Math.max(1, Date.now() - startedAt);
@@ -263,13 +271,13 @@ async function readOpenAiStreamResult(response, onDelta, startedAt) {
     buffer = lines.pop() || "";
     for (const line of lines) {
       if (await processLine(line)) {
-        return { answer, usage, firstTokenMs };
+        return { answer, usage, firstTokenMs, finishReason };
       }
     }
     if (done) break;
   }
   if (buffer) await processLine(buffer);
-  return { answer, usage, firstTokenMs };
+  return { answer, usage, firstTokenMs, finishReason };
 }
 
 function normalizeUsage(usage) {

@@ -51,7 +51,7 @@ test("direct and deep prompts only explain meaning at different depths", () => {
   assert.match(deepPrompt, /不要添加其他栏目/);
   assert.doesNotMatch(deepPrompt, /概念背景|论证作用|可能争议|可追问问题/);
   assert.deepEqual(getGenerationConfig("direct"), { temperature: 0.1, maxTokens: 700 });
-  assert.deepEqual(getGenerationConfig("deep"), { temperature: 0.2, maxTokens: 2200 });
+  assert.deepEqual(getGenerationConfig("deep"), { temperature: 0.2, maxTokens: 3200 });
 });
 
 test("mock provider returns mode-specific direct and deep answers", async () => {
@@ -129,7 +129,7 @@ test("streams an OpenAI-compatible answer delta by delta", async (t) => {
     requestBody = JSON.parse(options.body);
     return new Response([
       'data: {"choices":[{"delta":{"content":"流式"}}]}',
-      'data: {"choices":[{"delta":{"content":"回答"}}]}',
+      'data: {"choices":[{"delta":{"content":"回答"},"finish_reason":"stop"}]}',
       'data: [DONE]',
       ""
     ].join("\n\n"), { headers: { "content-type": "text/event-stream" } });
@@ -153,4 +153,35 @@ test("streams an OpenAI-compatible answer delta by delta", async (t) => {
   assert.equal(requestBody.stream, true);
   assert.deepEqual(deltas, ["流式", "回答"]);
   assert.equal(result.answer, "流式回答");
+  assert.equal(result.finishReason, "stop");
+});
+
+test("reports a streaming length limit to the caller", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => new Response([
+    'data: {"choices":[{"delta":{"content":"未完成"}}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+    'data: [DONE]',
+    ""
+  ].join("\n\n"), { headers: { "content-type": "text/event-stream" } });
+
+  const provider = createAiProvider({
+    provider: "openai-compatible",
+    apiKey: "test-key",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-test"
+  });
+  const result = await provider.streamExplain({
+    mode: "deep",
+    selectedText: "原文",
+    context: "上下文",
+    question: "",
+    documentTitle: "文章"
+  }, () => {});
+
+  assert.equal(result.answer, "未完成");
+  assert.equal(result.finishReason, "length");
 });

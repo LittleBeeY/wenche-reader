@@ -722,6 +722,48 @@ test("times out an unresponsive AI provider", async (t) => {
   assert.deepEqual(await response.json(), { error: "AI provider request timed out" });
 });
 
+test("does not save an AI answer stopped by the output limit", async (t) => {
+  const aiProvider = {
+    name: "length-limited-provider",
+    async explain() {
+      return {
+        answer: "这是没有结束的回答",
+        finishReason: "length",
+        provider: "length-limited-provider",
+        model: "test"
+      };
+    }
+  };
+  let app;
+  const baseUrl = await withTestServer(t, {
+    aiProvider,
+    onApp: (value) => { app = value; }
+  });
+  const upload = await fetch(`${baseUrl}/api/documents`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "length.txt",
+      contentBase64: Buffer.from("Length limited context").toString("base64")
+    })
+  });
+  const document = await upload.json();
+
+  const response = await fetch(`${baseUrl}/api/ai/explain`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      documentId: document.id,
+      mode: "deep",
+      selection: { text: "Length", blockIds: [document.blocks[0].id] }
+    })
+  });
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "AI 回答达到长度上限，未完整生成，请重试。" });
+  assert.equal(app.locals.storage.getDocument(document.id).aiRecords.length, 0);
+});
+
 test("persists reading annotations and saved AI answers and exports Markdown", async (t) => {
   const baseUrl = await withTestServer(t);
   const upload = await fetch(`${baseUrl}/api/documents`, {

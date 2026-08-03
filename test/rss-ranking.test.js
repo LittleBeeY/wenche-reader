@@ -14,6 +14,7 @@ const baseEntry = {
   publishedAt: new Date().toISOString(),
   receivedAt: new Date().toISOString(),
   estimatedReadMinutes: 6,
+  contentText: "这是一段具有完整信息的资讯正文，包含足够的背景、事实、解释和上下文，能够支持阅读判断与今日精选推荐，而不是只有标题或一句非常短的摘要。".repeat(2),
   readState: "unread",
   hidden: false
 };
@@ -114,4 +115,23 @@ test("brief selection includes focus section and keeps reasons", () => {
   assert.equal(selection.length, 10);
   assert.equal(selection.filter((item) => item.section === "focus").length, 3);
   assert.ok(selection.every((item) => item.reason.length > 0));
+});
+
+test("brief selection excludes entries without substantial readable content", () => {
+  const selection = buildBriefSelection([
+    {
+      entry: { ...baseEntry, id: 1, contentText: "只有一句短摘要" },
+      priority: 1,
+      signals: { topicRelevance: 1 },
+      reasons: ["最新内容"]
+    },
+    {
+      entry: { ...baseEntry, id: 2 },
+      priority: 0.5,
+      signals: { topicRelevance: 0.5 },
+      reasons: ["内容完整"]
+    }
+  ], { total: 10, exploreItem: false });
+
+  assert.deepEqual(selection.map((item) => item.entryId), [2]);
 });
