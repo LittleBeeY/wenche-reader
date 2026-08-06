@@ -6,3 +6,5 @@ uploads/
 test-results/
 playwright-report/
 .workbuddy/
+.agents/
+.codex/

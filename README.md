@@ -4,6 +4,16 @@
 
 正式软件名称：**文澈AI深度阅读系统 V1.0**。
 
+[![CI](https://github.com/LittleBeeY/wenche-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/LittleBeeY/wenche-reader/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/LittleBeeY/wenche-reader)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen)](https://nodejs.org/)
+
+## 界面预览
+
+![阅读工作区](docs/screenshots/reader.png)
+
+![资讯收件箱](docs/screenshots/rss.png)
+
 ## 当前能力
 
 - 资讯（RSS/Atom）订阅：粘贴 Feed 或网站地址自动探测订阅，支持 OPML 批量导入（先预览并识别新增、重复、无效条目）与导出。
@@ -35,6 +45,15 @@
 ## 快速启动
 
 需要 Node.js 22.13.0 或更高版本。
+
+Linux / macOS：
+
+```bash
+npm install
+npm start
+```
+
+Windows：
 
 ```powershell
 npm.cmd install
@@ -121,11 +140,12 @@ npm.cmd run release:check
 - [RSS 资讯与 AI 阅读生态详细设计](docs/RSS_DESIGN.md)
 - [安全问题报告](SECURITY.md)
 - [参与贡献](CONTRIBUTING.md)
+- [行为准则](CODE_OF_CONDUCT.md)
 - [版本记录](CHANGELOG.md)
 
 ## 当前边界
 
-这是面向可信单机环境的 V1.0，目前没有账号、多人隔离、云端部署、扫描 PDF OCR 和多文档语义检索。不要直接暴露到公网；公网或多人环境还需要认证、用户隔离、隐私授权、限流和后台解析任务。
+这是面向可信单机环境的 V1 系列（当前版本 1.1.0），目前没有账号、多人隔离、云端部署、扫描 PDF OCR 和多文档语义检索。不要直接暴露到公网；公网或多人环境还需要认证、用户隔离、隐私授权、限流和后台解析任务。
 
 ## 开源许可
 

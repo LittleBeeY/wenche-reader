@@ -1,6 +1,6 @@
 {
   "name": "wenche-reader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "文澈阅读：本地优先、支持划词 AI 解析的深度阅读器",
   "private": true,
   "license": "Apache-2.0",

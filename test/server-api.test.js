@@ -71,7 +71,7 @@ test("sets browser security headers without exposing Express", async (t) => {
   assert.equal(response.headers.get("x-powered-by"), null);
 });
 
-test("reports the V1.0 service identity from the health endpoint", async (t) => {
+test("reports the service identity from the health endpoint", async (t) => {
   const baseUrl = await withTestServer(t);
   const response = await fetch(`${baseUrl}/api/health`);
 
@@ -79,7 +79,7 @@ test("reports the V1.0 service identity from the health endpoint", async (t) => 
   assert.deepEqual(await response.json(), {
     name: "文澈阅读",
     fullName: "文澈AI深度阅读系统",
-    version: "1.0.0",
+    version: "1.1.0",
     status: "ok"
   });
 });

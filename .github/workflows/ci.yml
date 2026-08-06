@@ -24,3 +24,30 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm audit --omit=dev --audit-level=moderate
+
+  e2e:
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            projects: --project=chrome --project=firefox
+          - os: windows-latest
+            projects: --project=chrome --project=firefox --project=edge
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Firefox (Ubuntu)
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps firefox
+      - name: Install Playwright Firefox (Windows)
+        if: runner.os == 'Windows'
+        run: npx playwright install firefox
+      - name: Run end-to-end tests
+        run: npx playwright test ${{ matrix.projects }}
