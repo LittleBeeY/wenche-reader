@@ -4,16 +4,45 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="文澈阅读，本地优先的 AI 深度阅读器" />
-    <meta name="theme-color" content="#dfecef" />
+    <meta name="theme-color" content="#e9efef" />
     <title>文澈阅读</title>
-    <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/design-refresh.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css?v=11" />
+    <link rel="stylesheet" href="/design-refresh.css?v=11" />
   </head>
   <body>
     <main class="app-shell" id="app-shell">
       <aside class="sidebar" id="document-sidebar">
         <div class="brand">
-          <div class="brand-mark">澈</div>
+          <div class="brand-mark" aria-hidden="true">
+            <svg class="brand-mark-art" viewBox="0 0 64 64" aria-hidden="true">
+              <defs>
+                <radialGradient id="bmMoonGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55" />
+                  <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="46" cy="22" r="12" fill="url(#bmMoonGlow)" />
+              <circle cx="46" cy="22" r="3.4" fill="#ffffff" fill-opacity="0.88" />
+              <path
+                d="M10 46 Q18 42 26 46 T42 46 T58 46"
+                fill="none"
+                stroke="#ffffff"
+                stroke-opacity="0.42"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+              <path
+                d="M14 52 Q22 49 30 52 T46 52 T58 52"
+                fill="none"
+                stroke="#ffffff"
+                stroke-opacity="0.24"
+                stroke-width="1.2"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span class="brand-mark-text">澈</span>
+          </div>
           <div class="brand-copy">
             <h1>文澈阅读</h1>
             <p>AI 深度阅读器</p>
@@ -170,7 +199,13 @@
 
         <details id="sidebar-more" class="sidebar-more local-only">
           <summary title="更多侧栏工具">
-            <span class="sidebar-more-icon" aria-hidden="true">•••</span>
+            <span class="sidebar-more-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.8"></circle>
+                <circle cx="12" cy="12" r="1.8"></circle>
+                <circle cx="19" cy="12" r="1.8"></circle>
+              </svg>
+            </span>
             <span class="sidebar-more-label">更多</span>
           </summary>
           <div class="sidebar-more-menu">
@@ -235,9 +270,17 @@
       <section id="rss-list-panel" class="rss-list-panel" aria-label="资讯列表" hidden>
         <div class="rss-list-toolbar">
           <div class="rss-list-title-row">
-            <button id="rss-list-back" type="button" class="rss-list-back" title="返回资讯列表" aria-label="返回资讯列表">‹</button>
+            <button id="rss-list-back" type="button" class="rss-list-back" title="返回资讯列表" aria-label="返回资讯列表">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 6-6 6 6 6"></path>
+              </svg>
+            </button>
             <h2 id="rss-scope-title">今日精选</h2>
-            <button id="rss-list-refresh" type="button" title="刷新" aria-label="刷新">⟳</button>
+            <button id="rss-list-refresh" type="button" title="刷新" aria-label="刷新">
+              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 8V4m0 0h-4m4 0-3.1 3.1A7 7 0 1 0 19 12"></path>
+              </svg>
+            </button>
             <button id="rss-ai-status" type="button" class="rss-ai-status-btn" title="AI 接口设置" aria-label="AI 接口设置">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 3.5c.9 3.2 2.8 5.1 6 6-3.2.9-5.1 2.8-6 6-.9-3.2-2.8-5.1-6-6 3.2-.9 5.1-2.8 6-6Z"></path>
@@ -258,9 +301,27 @@
               <button type="button" data-value="oldest">最旧</button>
             </div>
             <div class="rss-segments" role="group" aria-label="列表视图" id="rss-view-control">
-              <button type="button" data-value="compact" title="紧凑视图" aria-label="紧凑视图">☰</button>
-              <button type="button" data-value="summary" title="摘要视图" aria-label="摘要视图">☷</button>
-              <button type="button" data-value="cards" title="卡片视图" aria-label="卡片视图">▦</button>
+              <button type="button" data-value="compact" title="紧凑视图" aria-label="紧凑视图">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h16"></path>
+                </svg>
+              </button>
+              <button type="button" data-value="summary" title="摘要视图" aria-label="摘要视图">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="5.5" cy="7" r="1.6"></circle>
+                  <circle cx="5.5" cy="12" r="1.6"></circle>
+                  <circle cx="5.5" cy="17" r="1.6"></circle>
+                  <path d="M10.5 7h9M10.5 12h9M10.5 17h9"></path>
+                </svg>
+              </button>
+              <button type="button" data-value="cards" title="卡片视图" aria-label="卡片视图">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="4" width="7" height="7" rx="1.5"></rect>
+                  <rect x="13" y="4" width="7" height="7" rx="1.5"></rect>
+                  <rect x="4" y="13" width="7" height="7" rx="1.5"></rect>
+                  <rect x="13" y="13" width="7" height="7" rx="1.5"></rect>
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -426,6 +487,30 @@
         </div>
 
         <article id="reader" class="reader" aria-live="polite"></article>
+        <div id="cold-start-card" class="cold-start-card" hidden>
+          <div class="cold-start-card-inner">
+            <div class="cold-start-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="6" r="2.6" fill="currentColor" stroke="none"></circle>
+                <path d="M3 16 q3.5 -2.5 7 0 t7 0 t7 0"></path>
+              </svg>
+            </div>
+            <h2>从一篇文章开始深度阅读</h2>
+            <p class="cold-start-lead">
+              导入你的文档，划词即可让 AI 解析、深入解析或提问；阅读标注与回答可沉淀导出。
+            </p>
+            <div class="cold-start-actions">
+              <button id="cold-start-upload" type="button">添加文档</button>
+              <button id="cold-start-rss" type="button" class="cold-start-secondary">订阅资讯</button>
+            </div>
+            <ol class="cold-start-steps" aria-label="使用三步">
+              <li><b>导入</b><span>拖入或选择文件</span></li>
+              <li><b>阅读</b><span>划词即用 AI 解析</span></li>
+              <li><b>沉淀</b><span>导出标注与回答</span></li>
+            </ol>
+            <p class="cold-start-privacy">本地优先 · 数据不出本机</p>
+          </div>
+        </div>
         <div id="selection-menu" class="selection-menu" hidden>
           <button data-action="remove-annotation" type="button">取消高亮</button>
           <button data-action="highlight" type="button">高亮</button>
@@ -442,7 +527,16 @@
             <span class="section-label">AI 助手</span>
             <h2>解析面板</h2>
           </div>
-          <span class="ai-drag-grip" aria-hidden="true">⠿</span>
+          <span class="ai-drag-grip" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <circle cx="9" cy="6" r="1.4"></circle>
+              <circle cx="15" cy="6" r="1.4"></circle>
+              <circle cx="9" cy="12" r="1.4"></circle>
+              <circle cx="15" cy="12" r="1.4"></circle>
+              <circle cx="9" cy="18" r="1.4"></circle>
+              <circle cx="15" cy="18" r="1.4"></circle>
+            </svg>
+          </span>
           <button
             id="toggle-ai-panel"
             class="aside-toggle"
@@ -685,6 +779,6 @@
     <script src="/vendor/purify.min.js"></script>
     <script src="/vendor/jszip.min.js"></script>
     <script src="/vendor/docx-preview.min.js"></script>
-    <script src="/app.js" type="module"></script>
+    <script src="/app.js?v=11" type="module"></script>
   </body>
 </html>

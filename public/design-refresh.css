@@ -4,37 +4,48 @@
  */
 
 :root {
+  /* ===== 品牌主色 · 黛青（澈 · 水 · 月） ===== */
+  --jade: #0a5e57;
+  --jade-deep: #074b45;
+  --jade-soft: rgba(183, 226, 220, 0.48);
+  --jade-glow: 0 8px 20px rgba(10, 94, 87, 0.22);
+
+  /* ===== AI 身份色带（激活时出现，青玉之外的唯一强调） ===== */
+  --ai-band: linear-gradient(90deg, rgba(10, 94, 87, 0.9), rgba(104, 94, 204, 0.78), transparent 88%);
+
+  /* ===== 语义色 ===== */
   --paper: #dfecef;
-  --surface: rgba(250, 253, 254, 0.76);
+  --surface: rgba(253, 252, 248, 0.78);
+  --surface-solid: #f6f6f2;
   --surface-soft: rgba(255, 255, 255, 0.52);
-  --surface-muted: rgba(222, 237, 240, 0.6);
+  --surface-muted: rgba(239, 238, 233, 0.62);
   --ink: #1d3035;
   --muted: #566c71;
   --line: rgba(255, 255, 255, 0.68);
   --line-strong: rgba(116, 143, 149, 0.3);
-  --teal: #167c73;
-  --teal-dark: #0e625e;
+  --teal: var(--jade);
+  --teal-dark: var(--jade-deep);
   --teal-soft: rgba(183, 226, 220, 0.48);
   --amber: #b47635;
   --amber-soft: rgba(255, 231, 188, 0.58);
   --rose: #b45268;
   --blue: #456e9f;
-  --accent: #167c73;
+  --accent: var(--jade);
   --accent-blue: #456e9f;
   --active-bg: rgba(183, 226, 220, 0.48);
   --hover-bg: rgba(255, 255, 255, 0.42);
   --border-color: rgba(116, 143, 149, 0.24);
   --text-muted: #566c71;
-  --teal-glow: 0 10px 28px rgba(22, 124, 115, 0.2);
-  --ring: 3px solid rgba(22, 124, 115, 0.24);
+  --teal-glow: 0 10px 28px rgba(15, 118, 110, 0.2);
+  --ring: 3px solid rgba(10, 94, 87, 0.5);
   --radius-sm: 9px;
   --radius-md: 12px;
   --radius-lg: 18px;
   --shadow: 0 28px 70px rgba(39, 68, 73, 0.22);
   --shadow-soft: 0 6px 20px rgba(39, 68, 73, 0.08);
   --shadow-lift: 0 18px 48px rgba(39, 68, 73, 0.17);
-  --glass-fill: rgba(250, 253, 254, 0.78);
-  --glass-fill-strong: rgba(252, 254, 255, 0.92);
+  --glass-fill: rgba(253, 252, 248, 0.8);
+  --glass-fill-strong: rgba(255, 254, 250, 0.94);
   --glass-stroke: rgba(255, 255, 255, 0.72);
   --glass-blur: blur(24px) saturate(1.24);
   --font-reading:
@@ -49,6 +60,8 @@
   --surface-muted: rgba(220, 235, 220, 0.6);
   --ink: #24332d;
   --muted: #596d62;
+  --jade: #0d6a62;
+  --jade-deep: #0a5750;
   --line-strong: rgba(111, 137, 119, 0.29);
   --teal-soft: rgba(185, 224, 205, 0.48);
   --active-bg: rgba(185, 224, 205, 0.48);
@@ -59,22 +72,29 @@
 }
 
 :root[data-theme="night"] {
+  /* 深空 · 月下波光：青玉在暗处的发光版本 + AI 之紫 */
+  --jade: #5db7aa;
+  --jade-deep: #83d0c4;
+  --jade-soft: rgba(44, 101, 94, 0.48);
+  --jade-glow: 0 10px 28px rgba(93, 183, 170, 0.28);
+  --ai-band: linear-gradient(90deg, rgba(93, 183, 170, 0.92), rgba(158, 122, 245, 0.82), transparent 88%);
   --paper: #10191c;
   --surface: rgba(25, 37, 40, 0.76);
+  --surface-solid: #141c1e;
   --surface-soft: rgba(40, 55, 57, 0.54);
   --surface-muted: rgba(48, 67, 68, 0.58);
   --ink: #e1eaE8;
   --muted: #97aaa9;
   --line: rgba(221, 240, 238, 0.1);
   --line-strong: rgba(193, 221, 218, 0.19);
-  --teal: #5db7aa;
-  --teal-dark: #83d0c4;
+  --teal: var(--jade);
+  --teal-dark: var(--jade-deep);
   --teal-soft: rgba(44, 101, 94, 0.48);
   --amber: #dfa460;
   --amber-soft: rgba(111, 77, 41, 0.56);
   --rose: #e58a9d;
   --blue: #91b5df;
-  --accent: #5db7aa;
+  --accent: var(--jade);
   --accent-blue: #759ccc;
   --active-bg: rgba(44, 101, 94, 0.48);
   --hover-bg: rgba(224, 240, 238, 0.07);
@@ -91,22 +111,22 @@
 body,
 :root[data-theme="night"] body {
   background:
-    radial-gradient(920px 640px at 4% -16%, rgba(119, 211, 202, 0.26), transparent 68%),
-    radial-gradient(820px 600px at 102% 2%, rgba(139, 160, 217, 0.18), transparent 66%),
-    linear-gradient(135deg, #e7eff1 0%, #dfe9ed 48%, #e8edf2 100%);
+    radial-gradient(920px 640px at 4% -16%, rgba(10, 94, 87, 0.05), transparent 68%),
+    radial-gradient(820px 600px at 102% 2%, rgba(110, 116, 168, 0.03), transparent 66%),
+    linear-gradient(135deg, #f2f1ed 0%, #ebebe5 48%, #f0efea 100%);
 }
 
 :root[data-theme="eye"] body {
   background:
-    radial-gradient(920px 640px at 4% -16%, rgba(131, 194, 155, 0.23), transparent 68%),
-    radial-gradient(820px 600px at 102% 2%, rgba(154, 182, 216, 0.15), transparent 66%),
-    linear-gradient(135deg, #e7efe7 0%, #dce8df 52%, #e9ede5 100%);
+    radial-gradient(920px 640px at 4% -16%, rgba(111, 170, 130, 0.1), transparent 68%),
+    radial-gradient(820px 600px at 102% 2%, rgba(150, 170, 196, 0.06), transparent 66%),
+    linear-gradient(135deg, #e8efe8 0%, #dde8dd 52%, #eaeee6 100%);
 }
 
 :root[data-theme="night"] body {
   background:
-    radial-gradient(920px 640px at 4% -16%, rgba(54, 139, 134, 0.22), transparent 68%),
-    radial-gradient(820px 600px at 102% 2%, rgba(76, 91, 156, 0.17), transparent 66%),
+    radial-gradient(920px 640px at 4% -16%, rgba(54, 139, 134, 0.16), transparent 68%),
+    radial-gradient(820px 600px at 102% 2%, rgba(96, 86, 170, 0.13), transparent 66%),
     linear-gradient(135deg, #111b1e 0%, #10171c 52%, #171a25 100%);
 }
 
@@ -115,14 +135,14 @@ body::after {
   border-radius: 50%;
   content: "";
   filter: blur(12px);
-  opacity: 0.28;
+  opacity: 0.07;
   pointer-events: none;
   position: fixed;
   z-index: 0;
 }
 
 body::before {
-  background: rgba(114, 225, 210, 0.28);
+  background: rgba(10, 94, 87, 0.18);
   height: 220px;
   left: 38%;
   top: -128px;
@@ -130,7 +150,7 @@ body::before {
 }
 
 body::after {
-  background: rgba(145, 153, 231, 0.2);
+  background: rgba(110, 116, 168, 0.12);
   bottom: -160px;
   height: 310px;
   right: 14%;
@@ -144,14 +164,28 @@ body::after {
 }
 
 button {
-  background: linear-gradient(135deg, #1a8c80, #116c68);
+  background: var(--jade);
   border-radius: var(--radius-sm);
+  box-shadow: 0 1px 2px rgba(5, 42, 38, 0.1);
 }
 
 button:hover {
-  background: linear-gradient(135deg, #21978b, #147772);
-  box-shadow: var(--teal-glow);
+  background: var(--jade-deep);
+  box-shadow: 0 2px 8px rgba(10, 94, 87, 0.14);
   filter: none;
+}
+
+:root[data-theme="night"] button {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+:root[data-theme="night"] button:hover {
+  background: #4a9e90;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="night"] #ask-button {
+  background: linear-gradient(135deg, #2fa892, #1f7f72);
 }
 
 input::placeholder,
@@ -173,11 +207,11 @@ textarea::placeholder {
 }
 
 .sidebar {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.84), rgba(245, 251, 252, 0.72));
+  background: linear-gradient(160deg, rgba(253, 252, 249, 0.9), rgba(249, 249, 245, 0.8));
   border-right-color: var(--glass-stroke);
   box-shadow:
-    1px 0 0 rgba(113, 140, 147, 0.12),
-    12px 0 42px rgba(50, 82, 88, 0.08);
+    1px 0 0 rgba(113, 140, 147, 0.1),
+    12px 0 42px rgba(50, 82, 88, 0.06);
   padding: 14px 12px;
 }
 
@@ -190,14 +224,30 @@ textarea::placeholder {
 }
 
 .brand-mark {
-  background: linear-gradient(145deg, rgba(44, 184, 170, 0.98), rgba(13, 101, 103, 0.98));
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  border-radius: 13px;
+  background:
+    linear-gradient(155deg, rgba(64, 178, 168, 0.96) 0%, rgba(28, 121, 122, 0.96) 55%, rgba(13, 78, 86, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 14px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 10px 24px rgba(24, 123, 116, 0.24);
-  font-size: 17px;
-  text-shadow: 0 1px 3px rgba(3, 63, 61, 0.36);
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(8, 46, 52, 0.32),
+    0 10px 24px rgba(13, 90, 96, 0.28),
+    0 2px 6px rgba(13, 90, 96, 0.18);
+  text-shadow: 0 1px 3px rgba(3, 50, 56, 0.45);
+}
+
+/* 夜间：月光下的青玉 —— 提亮品牌块并叠加极光紫边缘光 */
+:root[data-theme="night"] .brand-mark {
+  background:
+    linear-gradient(155deg, rgba(93, 183, 170, 0.96) 0%, rgba(36, 104, 106, 0.96) 55%, rgba(20, 60, 68, 0.98) 100%);
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(0, 20, 24, 0.4),
+    0 0 0 1px rgba(158, 122, 245, 0.22),
+    0 10px 26px rgba(0, 0, 0, 0.5),
+    0 0 22px rgba(93, 183, 170, 0.16);
+  text-shadow: 0 1px 3px rgba(2, 30, 36, 0.5);
 }
 
 .brand h1 {
@@ -218,11 +268,11 @@ textarea::placeholder {
 .reading-settings > summary,
 .rss-nav-mini,
 .rss-list-title-row button {
-  background: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.52);
   border-color: var(--glass-stroke);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 3px 10px rgba(54, 82, 87, 0.06);
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 3px 10px rgba(54, 82, 87, 0.05);
 }
 
 :root[data-theme="night"] .aside-toggle,
@@ -239,7 +289,7 @@ textarea::placeholder {
 .page-controls > button:hover:not(:disabled),
 .reading-settings > summary:hover {
   background: var(--teal-soft);
-  border-color: rgba(22, 124, 115, 0.28);
+  border-color: rgba(15, 118, 110, 0.28);
   box-shadow: 0 6px 18px rgba(39, 86, 86, 0.1);
   color: var(--teal-dark);
 }
@@ -256,11 +306,9 @@ textarea::placeholder {
 }
 
 .library-source-switch button[data-active="true"] {
-  background: linear-gradient(110deg, rgba(195, 235, 230, 0.68), rgba(255, 255, 255, 0.38));
-  border-color: rgba(255, 255, 255, 0.58);
-  box-shadow:
-    inset 3px 0 0 var(--teal),
-    0 6px 18px rgba(49, 91, 91, 0.07);
+  background: linear-gradient(110deg, rgba(190, 232, 226, 0.4), rgba(255, 255, 255, 0.32));
+  border-color: rgba(255, 255, 255, 0.6);
+  color: var(--jade-deep);
 }
 
 :root[data-theme="night"] .library-source-switch button[data-active="true"] {
@@ -361,11 +409,15 @@ textarea::placeholder {
 }
 
 .reader-toolbar {
-  background: rgba(249, 253, 254, 0.78);
+  background: rgba(253, 252, 248, 0.82);
   border-bottom-color: var(--glass-stroke);
-  box-shadow: 0 8px 30px rgba(50, 82, 88, 0.07);
+  box-shadow: 0 8px 30px rgba(50, 82, 88, 0.06);
   min-height: 78px;
   padding: 12px 22px;
+  position: relative;
+  /* 工具栏是主要交互区：必须高于 AI 面板（z:50），否则阅读设置弹层被遮挡。
+     窄屏 AI 面板默认收起，故仅桌面端生效。 */
+  z-index: 51;
 }
 
 :root[data-theme="night"] .reader-toolbar {
@@ -395,12 +447,12 @@ textarea::placeholder {
 }
 
 .reader {
-  background: #f9fbfc;
-  border: 1px solid rgba(255, 255, 255, 0.9);
+  background: #fdfcf8;
+  border: 1px solid rgba(255, 255, 255, 0.94);
   border-radius: 18px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 22px 60px rgba(44, 72, 78, 0.13);
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 22px 60px rgba(40, 64, 70, 0.1);
   color: var(--ink);
   letter-spacing: 0.018em;
   margin: 22px auto;
@@ -411,7 +463,7 @@ textarea::placeholder {
 
 :root[data-theme="eye"] .reader,
 :root[data-theme="eye"] .reader-rich-frame {
-  background: #f8faf5;
+  background: #f9fbf7;
 }
 
 :root[data-theme="night"] .reader {
@@ -469,7 +521,7 @@ textarea::placeholder {
 
 .doc-table,
 .doc-code pre {
-  background: rgba(233, 242, 243, 0.52);
+  background: rgba(228, 238, 239, 0.5);
   border-color: var(--line-strong);
 }
 
@@ -491,12 +543,12 @@ textarea::placeholder {
 
 .ai-panel,
 .app-shell.rss-mode .ai-panel {
-  background: linear-gradient(155deg, rgba(252, 254, 255, 0.9), rgba(237, 247, 248, 0.8));
-  border-color: rgba(255, 255, 255, 0.76);
+  background: linear-gradient(155deg, rgba(255, 254, 250, 0.94), rgba(250, 250, 246, 0.86));
+  border-color: rgba(255, 255, 255, 0.8);
   border-radius: 20px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 24px 64px rgba(40, 72, 79, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 24px 64px rgba(40, 72, 79, 0.18);
   gap: 13px;
   padding: 19px;
 }
@@ -508,14 +560,22 @@ textarea::placeholder {
 }
 
 .ai-panel::before {
-  background: linear-gradient(90deg, rgba(54, 206, 191, 0.9), rgba(105, 134, 219, 0.76), transparent 88%);
+  background: var(--ai-band);
   border-radius: 999px;
   content: "";
   height: 3px;
   left: 20px;
+  opacity: 0.4;
   position: absolute;
   right: 20px;
   top: 0;
+  transition: opacity 220ms ease;
+}
+
+/* AI 面板状态相关：划词菜单出现 / AI 流式回答中 → 光带亮起（工作台激活） */
+.app-shell:has(.selection-menu:not([hidden])) .ai-panel::before,
+.app-shell:has(.answer-item.is-streaming) .ai-panel::before {
+  opacity: 1;
 }
 
 .app-shell.is-right-collapsed .ai-panel::before {
@@ -603,7 +663,7 @@ textarea::placeholder {
 }
 
 .rss-list-toolbar {
-  background: rgba(249, 253, 254, 0.78);
+  background: rgba(253, 252, 248, 0.82);
   border-bottom-color: var(--glass-stroke);
   gap: 10px;
   padding: 17px 22px 15px;
@@ -641,10 +701,24 @@ textarea::placeholder {
 }
 
 .rss-nav-item[data-active="true"] {
-  background: rgba(193, 232, 227, 0.54);
-  border-color: rgba(255, 255, 255, 0.56);
-  box-shadow: inset 3px 0 0 var(--teal);
-  color: var(--teal-dark);
+  background: transparent;
+  border-color: transparent;
+  color: var(--jade-deep);
+  font-weight: 650;
+}
+
+/* 高特异性覆盖：保证覆盖 styles.css:3329 同 specificity 规则 */
+.app-shell .rss-nav-item[data-active="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.app-shell .library-source-switch button[data-active="true"] {
+  background: linear-gradient(110deg, rgba(190, 232, 226, 0.4), rgba(255, 255, 255, 0.32));
+  border-color: rgba(255, 255, 255, 0.6);
+  color: var(--jade-deep);
+  box-shadow: none;
 }
 
 .app-shell.rss-mode .rss-feed-item-row {
@@ -762,6 +836,9 @@ textarea::placeholder {
 }
 
 .rss-entry-title {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   font-size: 16px;
   font-weight: 710;
   line-height: 1.45;
@@ -772,10 +849,6 @@ textarea::placeholder {
   box-shadow: none;
   color: var(--teal-dark);
   filter: none;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--teal) 48%, transparent);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.22em;
 }
 
 .rss-entry-title:focus-visible {
@@ -790,11 +863,11 @@ textarea::placeholder {
 }
 
 .rss-entry-reason {
-  background: rgba(255, 231, 188, 0.42);
-  border-left: 2px solid var(--amber);
-  border-radius: 0 7px 7px 0;
-  color: color-mix(in srgb, var(--amber) 72%, var(--ink));
-  padding: 6px 9px;
+  background: transparent;
+  border-left: 0;
+  border-radius: 0;
+  color: color-mix(in srgb, var(--amber) 78%, var(--ink));
+  padding: 0;
 }
 
 /* Today's selection reasons are short explanations, not excerpts: never clip them. */
@@ -866,6 +939,11 @@ textarea::placeholder {
   body::before,
   body::after {
     opacity: 0.3;
+  }
+
+  /* 窄屏 AI 面板全屏展开时不遮挡其顶部（关闭/拖动区） */
+  .reader-toolbar {
+    z-index: auto;
   }
 
   .sidebar {
@@ -989,7 +1067,33 @@ textarea::placeholder {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .view-cards .rss-entry {
+  .view-cards .rss-entry,
+  .brand-mark,
+  .brand-mark::after,
+  .ai-panel,
+  .rss-entry,
+  .document-list-item,
+  .aside-toggle,
+  .page-controls > button,
+  .reading-settings > summary,
+  .upload-zone,
+  .rss-footer-command,
+  .rss-list-title-row button,
+  .rss-article-actions button,
+  .rss-article-actions a {
+    transition: none;
+  }
+
+  .brand-mark,
+  .brand-mark::after {
+    animation: none;
+  }
+
+  button {
+    transform: none;
+  }
+
+  .ai-panel::before {
     transition: none;
   }
 }
@@ -1002,15 +1106,18 @@ textarea::placeholder {
 }
 
 .brand-mark {
-  background: linear-gradient(145deg, #4b958c, #286b66);
-  border-color: rgba(255, 255, 255, 0.38);
-  border-radius: 12px;
+  background:
+    linear-gradient(155deg, #2f8683 0%, #1a5b62 55%, #0d4049 100%);
+  border-color: rgba(255, 255, 255, 0.34);
+  border-radius: 14px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.34),
-    0 7px 16px rgba(35, 101, 95, 0.2);
-  font-size: 16px;
-  font-weight: 760;
-  text-shadow: none;
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(7, 38, 44, 0.28),
+    0 8px 18px rgba(13, 80, 86, 0.24);
+  font-size: 18px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 2px rgba(0, 36, 40, 0.4);
 }
 
 .brand h1 {
@@ -1799,6 +1906,7 @@ textarea::placeholder {
 @media (max-width: 760px) {
   .app-shell.rss-mode.rss-reading .reader-toolbar {
     padding: 10px 12px;
+    z-index: auto;
   }
 
   .app-shell.rss-mode.rss-reading .rss-article-actions {
@@ -2048,4 +2156,128 @@ textarea::placeholder {
     max-height: 6.6em;
     -webkit-line-clamp: 4;
   }
+}
+
+/* ============================================
+   冷启动引导卡片（二期待办 · 独立容器，不触碰 #reader 空态）
+   ============================================ */
+
+.cold-start-card {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  padding: 24px;
+}
+
+.cold-start-card[hidden] {
+  display: none;
+}
+
+.cold-start-card-inner {
+  max-width: 460px;
+  text-align: center;
+}
+
+.cold-start-mark {
+  align-items: center;
+  background: linear-gradient(155deg, rgba(10, 94, 87, 0.1), rgba(10, 94, 87, 0.03));
+  border: 1px solid rgba(10, 94, 87, 0.16);
+  border-radius: 18px;
+  color: var(--jade);
+  display: flex;
+  height: 58px;
+  justify-content: center;
+  margin: 0 auto 20px;
+  width: 58px;
+}
+
+.cold-start-card h2 {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+
+.cold-start-lead {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.75;
+  margin: 0 auto 24px;
+  max-width: 400px;
+}
+
+.cold-start-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.cold-start-actions button {
+  min-height: 40px;
+  min-width: 132px;
+}
+
+.cold-start-actions .cold-start-secondary {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--line-strong);
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.cold-start-actions .cold-start-secondary:hover {
+  background: var(--jade-soft);
+  border-color: rgba(10, 94, 87, 0.28);
+  color: var(--jade-deep);
+}
+
+.cold-start-steps {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.cold-start-steps li {
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.cold-start-steps b {
+  color: var(--jade-deep);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.cold-start-privacy {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin: 0;
+  opacity: 0.75;
+}
+
+:root[data-theme="night"] .cold-start-mark {
+  background: linear-gradient(155deg, rgba(93, 183, 170, 0.16), rgba(93, 183, 170, 0.04));
+  border-color: rgba(158, 122, 245, 0.28);
+  color: #8ed4c6;
+}
+
+:root[data-theme="night"] .cold-start-actions .cold-start-secondary {
+  background: rgba(218, 239, 236, 0.08);
+  border-color: rgba(215, 237, 234, 0.14);
+  color: var(--ink);
+}
+
+:root[data-theme="night"] .cold-start-actions .cold-start-secondary:hover {
+  background: rgba(79, 142, 133, 0.3);
+  color: #b8e1db;
 }

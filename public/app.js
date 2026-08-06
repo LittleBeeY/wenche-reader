@@ -186,6 +186,7 @@ const immersiveToggleButton = document.querySelector("#immersive-toggle");
 const exitImmersiveButton = document.querySelector("#exit-immersive");
 const sourceLocalButton = document.querySelector("#source-local");
 const sourceRssButton = document.querySelector("#source-rss");
+const coldStartCard = document.querySelector("#cold-start-card");
 
 bindDisclosureState(localLibraryDisclosure, "local-library", { defaultOpen: true });
 bindDisclosureState(localLibraryFilters, "local-library-filters");
@@ -235,6 +236,7 @@ async function setSourceMode(mode) {
   appShell.classList.toggle("rss-mode", isRss);
   if (isRss) {
     sidebarMore.open = false;
+    if (coldStartCard) coldStartCard.hidden = true;
     rssController ??= initRssMode(rssHost);
     await rssController.activate();
     rssController.onDocumentLoaded(state.document);
@@ -242,6 +244,8 @@ async function setSourceMode(mode) {
     rssController?.deactivate();
     if (state.documentContext === "rss") {
       await restoreLocalDocumentContext();
+    } else if (!state.document && coldStartCard) {
+      coldStartCard.hidden = false;
     }
   }
   try {
@@ -253,6 +257,15 @@ sourceLocalButton.addEventListener("click", () => {
   void setSourceMode("local");
 });
 sourceRssButton.addEventListener("click", () => {
+  void setSourceMode("rss");
+});
+
+const coldStartUploadButton = document.querySelector("#cold-start-upload");
+const coldStartRssButton = document.querySelector("#cold-start-rss");
+coldStartUploadButton?.addEventListener("click", () => {
+  fileInput.click();
+});
+coldStartRssButton?.addEventListener("click", () => {
   void setSourceMode("rss");
 });
 
@@ -583,9 +596,10 @@ increaseFontButton.addEventListener("click", () => {
 });
 
 readingSettingsPanel.addEventListener("click", (event) => {
-  const option = event.target.closest("[data-reading-control] button[data-value]");
+  const option = event.target.closest("button[data-value]");
   if (!option) return;
-  const control = option.closest("[data-reading-control]").dataset.readingControl;
+  const control = option.closest("[data-reading-control]")?.dataset.readingControl;
+  if (!control) return;
   updateReadingSettings({ [control]: option.dataset.value });
 });
 
@@ -640,6 +654,7 @@ const lastDocumentId = getLastDocumentId(window.localStorage);
 if (state.documents.some((document) => Number(document.id) === lastDocumentId)) {
   await loadDocument(lastDocumentId);
 }
+if (coldStartCard) coldStartCard.hidden = Boolean(state.document);
 updatePaginationControls();
 updateSearchControls();
 try {
@@ -896,6 +911,12 @@ function applyReadingSettings() {
   reader.style.setProperty("--reader-content-width", widthMap[contentWidth]);
   reader.style.setProperty("--reader-line-height", String(lineHeightMap[lineHeight]));
   document.documentElement.dataset.theme = theme;
+  // 浏览器标签栏/地址栏颜色跟随主题，避免"深空内容 + 浅色外壳"的割裂
+  const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+  if (metaThemeColor) {
+    const themeColors = { light: "#e9efef", eye: "#e8efe8", night: "#10171c" };
+    metaThemeColor.setAttribute("content", themeColors[theme] || themeColors.light);
+  }
   applyDocxReadingScale();
   applyReadingSettingsToFrame(reader.querySelector(".reader-rich-frame"));
 
@@ -2039,6 +2060,7 @@ function clearDocumentView() {
   applyReadingSettings();
   readerTitle.textContent = "上传一篇文章开始阅读";
   reader.replaceChildren();
+  if (coldStartCard) coldStartCard.hidden = false;
   renderHistory([]);
   renderAnnotations();
   exportCurrentButton.disabled = true;
@@ -2069,6 +2091,7 @@ function saveCurrentReadingProgress() {
 
 function renderDocumentHeader(documentData) {
   readerTitle.textContent = documentData.title;
+  if (coldStartCard) coldStartCard.hidden = true;
   renderDocumentList();
 }
 

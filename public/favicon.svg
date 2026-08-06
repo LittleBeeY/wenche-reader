@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="文澈阅读">
+  <defs>
+    <linearGradient id="bmBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2f8683" />
+      <stop offset="55%" stop-color="#1a5b62" />
+      <stop offset="100%" stop-color="#0d4049" />
+    </linearGradient>
+    <radialGradient id="bmMoon" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+    <clipPath id="bmClip">
+      <rect x="0" y="0" width="64" height="64" rx="14" ry="14" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#bmClip)">
+    <rect x="0" y="0" width="64" height="64" fill="url(#bmBg)" />
+    <circle cx="48" cy="20" r="11" fill="url(#bmMoon)" />
+    <circle cx="48" cy="20" r="3.2" fill="#ffffff" fill-opacity="0.95" />
+    <path d="M8 46 Q16 42 24 46 T40 46 T56 46" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1.6" stroke-linecap="round" />
+    <path d="M12 52 Q20 49 28 52 T44 52 T56 52" fill="none" stroke="#ffffff" stroke-opacity="0.32" stroke-width="1.2" stroke-linecap="round" />
+    <text x="22" y="40" font-family="'Source Han Serif SC','Noto Serif SC','Songti SC','STSong','SimSun',serif" font-size="24" font-weight="640" fill="#ffffff" text-anchor="middle">澈</text>
+  </g>
+</svg>
