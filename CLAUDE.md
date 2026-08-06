@@ -47,18 +47,21 @@ npm.cmd run config:ai
 
 | 变量 | 用途 |
 | --- | --- |
-| `AI_PROVIDER` | `mock` 或 `openai-compatible` |
-| `AI_API_KEY` | 模型密钥 |
-| `AI_API_BASE` | OpenAI-compatible API 根地址 |
-| `AI_MODEL` | 模型标识 |
+| `AI_PROVIDER` | 预设名（`deepseek`/`openai`/`kimi`/`zhipu`/`qwen`/`ollama`/`anthropic`/`gemini`）、传输层类型（`openai-compatible`/`anthropic`/`gemini`）或 `mock`；预设自动带入默认根地址与模型 |
+| `AI_API_KEY` | 模型密钥（Ollama 等本地服务可留空） |
+| `AI_API_BASE` | API 根地址，可覆盖预设默认值 |
+| `AI_MODEL` | 模型标识，可覆盖预设默认值 |
 | `PORT` | HTTP 端口，默认 `3000` |
 | `HOST` | 监听地址，默认 `127.0.0.1` |
+
+AI 接口主要在应用内配置：点击 AI 面板顶部的状态栏打开设置对话框，读写 `/api/ai/settings`，保存后立即重建 provider 实例并同步给 RSS 服务，无需重启。`.env` 是这些设置的事实来源，手动修改后需重启。
 
 ## 文档
 
 - `README.md`：用户入口和当前能力。
 - `docs/ARCHITECTURE.md`：数据流、数据模型、API 与安全边界。
 - `docs/RUNBOOK.md`：运行、配置、备份和排障。
+- `docs/RSS_DESIGN.md`：已实现的内嵌资讯版块设计基线。
 - `docs/superpowers/`：历史设计与实施记录，不是现行待办。
 
 修改行为、路由、环境变量、数据模型或运维方式时，同步更新对应现行文档。历史记录不要追加到本文件。

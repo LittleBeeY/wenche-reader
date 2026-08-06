@@ -137,6 +137,19 @@ const prevPageButton = document.querySelector("#prev-page");
 const nextPageButton = document.querySelector("#next-page");
 const pageIndicator = document.querySelector("#page-indicator");
 const aiStatus = document.querySelector("#ai-status");
+const rssAiStatus = document.querySelector("#rss-ai-status");
+const aiSettingsDialog = document.querySelector("#ai-settings-dialog");
+const aiSettingsProvider = document.querySelector("#ai-settings-provider");
+const aiSettingsProviderHint = document.querySelector("#ai-settings-provider-hint");
+const aiSettingsKey = document.querySelector("#ai-settings-key");
+const aiSettingsKeyHint = document.querySelector("#ai-settings-key-hint");
+const aiSettingsClearKey = document.querySelector("#ai-settings-clear-key");
+const aiSettingsBase = document.querySelector("#ai-settings-base");
+const aiSettingsModel = document.querySelector("#ai-settings-model");
+const aiSettingsStatus = document.querySelector("#ai-settings-status");
+const aiSettingsCancel = document.querySelector("#ai-settings-cancel");
+const aiSettingsTest = document.querySelector("#ai-settings-test");
+const aiSettingsSave = document.querySelector("#ai-settings-save");
 const explainPageButton = document.querySelector("#explain-page");
 const deepPageButton = document.querySelector("#deep-page");
 const readerSearchInput = document.querySelector("#reader-search-input");
@@ -1038,23 +1051,177 @@ function updatePanelToggle(button, options) {
   }
 }
 
+function updateAiStatusSurfaces(status) {
+  aiStatus.classList.toggle("is-warning", !status.configured);
+  if (status.provider === "mock") {
+    aiStatus.textContent = "AI 接口：Mock 模式，点击配置真实模型。";
+  } else {
+    aiStatus.textContent = status.configured
+      ? `AI 接口：${status.provider} 已配置，模型 ${status.model}`
+      : `AI 接口：${status.provider} 未配置完整，点击配置。`;
+  }
+  if (rssAiStatus) {
+    const summary = status.provider === "mock"
+      ? "AI：Mock 模式，点击配置真实模型"
+      : status.configured
+        ? `AI：${status.provider} 已配置（${status.model}）`
+        : `AI：${status.provider} 未配置完整，点击配置`;
+    rssAiStatus.title = summary;
+    rssAiStatus.setAttribute("aria-label", summary);
+    rssAiStatus.classList.toggle("is-warning", !status.configured);
+  }
+}
+
 async function loadAiStatus() {
   try {
     const response = await fetch("/api/ai/status");
     const status = await readJson(response);
-    aiStatus.classList.toggle("is-warning", !status.configured);
-    if (status.provider === "mock") {
-      aiStatus.textContent = "AI 接口：Mock 模式，功能可试用，但不是真实大模型回答。";
-      return;
-    }
-    aiStatus.textContent = status.configured
-      ? `AI 接口：${status.provider} 已配置，模型 ${status.model}`
-      : `AI 接口：${status.provider} 未配置 API Key，当前无法调用真实模型。`;
+    updateAiStatusSurfaces(status);
   } catch (error) {
     aiStatus.classList.add("is-warning");
     aiStatus.textContent = `AI 接口检查失败：${error.message}`;
+    if (rssAiStatus) {
+      rssAiStatus.title = `AI 接口检查失败：${error.message}`;
+      rssAiStatus.classList.add("is-warning");
+    }
   }
 }
+
+let aiProviderOptions = [];
+let aiSettingsHasKey = false;
+let aiSettingsClearKeyRequested = false;
+
+async function openAiSettingsDialog() {
+  aiSettingsStatus.textContent = "";
+  aiSettingsStatus.classList.remove("is-error");
+  aiSettingsKey.value = "";
+  aiSettingsClearKeyRequested = false;
+  aiSettingsClearKey.disabled = false;
+  try {
+    const settings = await readJson(await fetch("/api/ai/settings"));
+    aiProviderOptions = settings.providers || [];
+    aiSettingsHasKey = Boolean(settings.hasApiKey);
+    fillProviderSelect(settings.provider);
+    applyProviderDefaults(settings.provider);
+    if (settings.provider !== "mock") {
+      if (settings.baseUrl) aiSettingsBase.value = settings.baseUrl;
+      if (settings.model) aiSettingsModel.value = settings.model;
+    }
+    aiSettingsDialog.showModal();
+  } catch (error) {
+    aiStatus.classList.add("is-warning");
+    aiStatus.textContent = `AI 设置加载失败：${error.message}`;
+  }
+}
+
+function fillProviderSelect(currentProvider) {
+  aiSettingsProvider.innerHTML = "";
+  for (const option of aiProviderOptions) {
+    const element = document.createElement("option");
+    element.value = option.key;
+    element.textContent = option.label;
+    if (option.description) element.title = option.description;
+    if (option.key === currentProvider) element.selected = true;
+    aiSettingsProvider.appendChild(element);
+  }
+  showProviderDescription(currentProvider);
+}
+
+function showProviderDescription(selectedKey) {
+  const option = aiProviderOptions.find((item) => item.key === selectedKey) || null;
+  aiSettingsProviderHint.textContent = option?.description || "";
+}
+
+function applyProviderDefaults(selectedKey) {
+  const option = aiProviderOptions.find((item) => item.key === selectedKey) || null;
+  const mockMode = selectedKey === "mock";
+  aiSettingsBase.value = mockMode ? "" : option?.baseUrl || "";
+  aiSettingsModel.value = mockMode ? "" : option?.model || "";
+  aiSettingsBase.disabled = mockMode;
+  aiSettingsModel.disabled = mockMode;
+  aiSettingsKey.disabled = mockMode;
+  aiSettingsKeyHint.textContent = mockMode ? "" : (aiSettingsHasKey ? "已配置，留空保持不变" : "未配置");
+  aiSettingsClearKey.hidden = mockMode || !aiSettingsHasKey;
+  showProviderDescription(selectedKey);
+}
+
+async function saveAiSettings() {
+  const payload = {
+    provider: aiSettingsProvider.value,
+    apiKey: aiSettingsKey.value,
+    baseUrl: aiSettingsBase.value,
+    model: aiSettingsModel.value,
+    clearKey: aiSettingsClearKeyRequested
+  };
+  aiSettingsSave.disabled = true;
+  aiSettingsStatus.textContent = "正在保存…";
+  try {
+    const result = await readJson(await fetch("/api/ai/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    }));
+    aiSettingsDialog.close();
+    await loadAiStatus();
+    setStatus(`AI 接口已切换为 ${result.provider}${result.configured ? `（${result.model}）` : "，但配置不完整"}`);
+  } catch (error) {
+    aiSettingsStatus.textContent = `保存失败：${error.message}`;
+    aiSettingsStatus.classList.add("is-error");
+  } finally {
+    aiSettingsSave.disabled = false;
+  }
+}
+
+async function testAiConnection() {
+  const payload = {
+    provider: aiSettingsProvider.value,
+    apiKey: aiSettingsKey.value,
+    baseUrl: aiSettingsBase.value,
+    model: aiSettingsModel.value
+  };
+  aiSettingsTest.disabled = true;
+  aiSettingsStatus.textContent = "正在测试连接…";
+  aiSettingsStatus.classList.remove("is-error");
+  try {
+    const result = await readJson(await fetch("/api/ai/settings/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    }));
+    aiSettingsStatus.textContent = result.message;
+    aiSettingsStatus.classList.toggle("is-error", !result.ok);
+  } catch (error) {
+    aiSettingsStatus.textContent = `测试失败：${error.message}`;
+    aiSettingsStatus.classList.add("is-error");
+  } finally {
+    aiSettingsTest.disabled = false;
+  }
+}
+
+aiStatus.addEventListener("click", openAiSettingsDialog);
+aiStatus.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openAiSettingsDialog();
+  }
+});
+rssAiStatus?.addEventListener("click", openAiSettingsDialog);
+aiSettingsProvider.addEventListener("change", () => applyProviderDefaults(aiSettingsProvider.value));
+aiSettingsCancel.addEventListener("click", () => aiSettingsDialog.close());
+aiSettingsTest.addEventListener("click", testAiConnection);
+aiSettingsSave.addEventListener("click", saveAiSettings);
+aiSettingsClearKey.addEventListener("click", () => {
+  aiSettingsClearKeyRequested = true;
+  aiSettingsKey.value = "";
+  aiSettingsKeyHint.textContent = "已选择清除，保存后生效";
+  aiSettingsClearKey.disabled = true;
+});
+// method="dialog" 的表单在输入框按 Enter 会直接关闭对话框而不保存，
+// 这里把 Enter 语义改为「保存」，避免用户以为已保存。
+aiSettingsDialog.querySelector("form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveAiSettings();
+});
 
 async function uploadFiles(files) {
   setBusy(true, files.length > 1 ? `正在上传 ${files.length} 篇文章` : "正在上传");

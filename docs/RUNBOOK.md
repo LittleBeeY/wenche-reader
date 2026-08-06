@@ -34,23 +34,26 @@ Windows 一键入口：
 
 ```powershell
 scripts\open-reader.cmd
-scripts\config-ai.cmd
 ```
 
-配置脚本会隐藏 API Key 输入，并在保存后请求 provider 的 `/models` 接口。连接检查失败不会删除配置；部分兼容服务不提供该接口，需要启动应用后再实际测试。
+## 配置 AI 接口（应用内）
+
+打开应用后点击 AI 面板顶部的「AI 接口」状态栏（本地文档视图）或资讯首页标题栏的 AI 按钮，即可进入设置对话框：选择接口、填写 API Key、按需调整根地址和模型，先「测试连接」再「保存设置」。保存后立即生效，无需重启服务，AI 初评等后台任务也会自动使用新配置。连接测试按接口类型发起：OpenAI-compatible 服务请求 `/models`，Anthropic 请求 `/v1/models`，Gemini 请求 `/v1beta/models`，本地 Ollama 请求 `/api/tags`；部分服务不提供对应接口时测试会失败，但配置仍可保存，以实际问答为准。
+
+Key 保存在本地 `.env` 中，设置页面只显示“已配置/未配置”，不回显 Key；留空保存表示保留原 Key。历史版本提供的 `scripts\config-ai.cmd` 仍可使用，但不是必需入口。
 
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `AI_PROVIDER` | `mock` | 使用 `openai-compatible` 调用真实模型 |
-| `AI_API_KEY` | 空 | 模型 API Key |
-| `AI_API_BASE` | `https://api.openai.com/v1` | OpenAI-compatible API 根地址 |
-| `AI_MODEL` | `gpt-4.1-mini` | 模型标识；一键脚本默认写入 `deepseek-v4-flash` |
+| `AI_PROVIDER` | `mock` | 厂商预设名 `deepseek`/`openai`/`kimi`/`zhipu`/`qwen`/`ollama`/`anthropic`/`gemini`，或传输层类型 `openai-compatible`/`anthropic`/`gemini`；预设自动带入根地址与模型 |
+| `AI_API_KEY` | 空 | 模型 API Key；Ollama 等本地服务可留空 |
+| `AI_API_BASE` | 随 provider 而异 | API 根地址，可覆盖预设默认值；`openai-compatible` 类型默认 `https://api.openai.com/v1` |
+| `AI_MODEL` | 随 provider 而异 | 模型标识，可覆盖预设默认值 |
 | `PORT` | `3000` | HTTP 端口 |
 | `HOST` | `127.0.0.1` | HTTP 监听地址；保持默认值可避免无意暴露到局域网 |
 
-服务启动时读取项目根目录 `.env`，且不会覆盖已经存在的进程环境变量。修改配置后需要重启服务。
+服务启动时读取项目根目录 `.env`，且不会覆盖已经存在的进程环境变量。环境变量通常由应用内设置页面写入（保存后立即生效）；手动编辑 `.env` 后需要重启服务。`AI_PROVIDER` 必须为上述已知值之一，拼写错误会在启动时直接报错，而不是静默退回 Mock 模式。
 
 ## 冒烟检查
 
@@ -95,15 +98,19 @@ npm.cmd start
 
 ### 页面显示 Mock 模式
 
-运行 `npm.cmd run config:ai`，确认 `.env` 中存在 `AI_PROVIDER=openai-compatible` 和有效的 `AI_API_KEY`，然后重启服务。
+点击 AI 面板顶部的「AI 接口」状态栏，在设置对话框中选择真实接口、填写 API Key 并保存，保存后立即生效。也可手动确认 `.env` 中 `AI_PROVIDER` 为预设名或传输层类型且 `AI_API_KEY` 有效，再重启服务。`AI_PROVIDER` 拼写错误会在启动时报错。
 
 ### AI 返回 401/403
 
-检查 API Key、账户余额和服务商权限。DeepSeek 的默认地址应为 `https://api.deepseek.com`，模型名必须是服务商当前支持的标识。
+检查 API Key、账户余额和服务商权限。DeepSeek 的默认地址应为 `https://api.deepseek.com`；Anthropic 需要 `https://api.anthropic.com`；Gemini 需要 `https://generativelanguage.googleapis.com`。模型名必须是服务商当前支持的标识。可在设置对话框中用「测试连接」快速定位密钥或地址问题。
 
 ### AI 返回 404
 
-通常是 API 根地址或模型名错误。应用会自动在根地址后调用 `/chat/completions`，不要把该路径重复写进 `AI_API_BASE`。
+通常是 API 根地址或模型名错误。`openai-compatible` 会自动在根地址后调用 `/chat/completions`，不要把该路径重复写进 `AI_API_BASE`；Anthropic 和 Gemini 的根地址应填域名根（不带 `/v1`、`/v1beta`），应用会自行追加对应路径。切换接口时，如果设置对话框中根地址留空，会使用所选接口的默认地址；`AI_API_BASE`/`AI_MODEL` 中残留的旧值仍会覆盖新预设默认值。
+
+### 切换不同的 AI 接口
+
+在设置对话框中选择其他接口并保存即可，保存后立即生效、无需重启。使用厂商预设时只需填 API Key（Ollama 除外）；自定义服务选择 `openai-compatible` 并自备根地址与模型。AI 历史记录中的 provider 字段会显示预设名（如 `deepseek`）而非传输层类型。
 
 ### 订阅源抓取失败
 

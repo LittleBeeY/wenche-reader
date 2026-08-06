@@ -1,18 +1,26 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateAnswerCitations } from "./lib/answerCitations.js";
 import { APP_INFO } from "./lib/appInfo.js";
-import { createAiProvider } from "./lib/aiProvider.js";
+import {
+  createAiProvider,
+  normalizeBaseUrl,
+  PROVIDER_PRESETS,
+  resolveAiProviderConfig
+} from "./lib/aiProvider.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
-import { loadEnvFile } from "./lib/env.js";
+import { loadEnvFile, updateEnvFile } from "./lib/env.js";
 import { buildReadingMarkdown } from "./lib/markdownExport.js";
 import { registerRssRoutes } from "./lib/rss/rssRoutes.js";
 import { RssImageCache } from "./lib/rss/imageProxy.js";
 import { RssScheduler } from "./lib/rss/rssScheduler.js";
 import { RssService } from "./lib/rss/rssService.js";
+import { createSafeLookup, validateRemoteUrl } from "./lib/rss/ssrfGuard.js";
 import { buildContextBundle } from "./lib/selectionContext.js";
 import { CURRENT_DOCUMENT_FORMAT_VERSION, Storage } from "./lib/storage.js";
 
@@ -43,10 +51,13 @@ const VALID_HIGHLIGHT_COLORS = new Set(["yellow", "green", "blue", "rose"]);
 export function createApp(options = {}) {
   const dataDir = options.dataDir || path.join(projectRoot, "data");
   const uploadDir = options.uploadDir || path.join(projectRoot, "uploads");
+  const envPath = options.envPath || path.join(projectRoot, ".env");
   const storage = options.storage || new Storage({ dataDir });
-  const aiProvider = options.aiProvider || createAiProvider(options.aiProviderConfig);
+  let aiProvider = options.aiProvider || createAiProvider(options.aiProviderConfig);
   const aiRequestTimeoutMs = options.aiRequestTimeoutMs || 120000;
   const uploadLimits = { ...DEFAULT_UPLOAD_LIMITS, ...options.uploadLimits };
+  // AI 连接测试的请求实现，默认使用带 DNS rebinding 防护的安全实现；测试可注入 mock。
+  const aiTestRequestImpl = options.aiTestRequestImpl || requestWithLookup;
 
   const rssService = options.rssService || new RssService({
     storage,
@@ -56,6 +67,15 @@ export function createApp(options = {}) {
     fetchImpl: options.rss?.fetchImpl,
     extractImpl: options.rss?.extractImpl
   });
+
+  /** 应用内保存 AI 配置后重建 provider 实例，让路由和 RSS 服务立即使用新配置。 */
+  function reloadAiProvider(config) {
+    aiProvider = createAiProvider(config);
+    if (rssService && typeof rssService.setAiProvider === "function") {
+      rssService.setAiProvider(aiProvider);
+    }
+    return aiProvider;
+  }
   const rssImageCache = options.rssImageCache || new RssImageCache({
     cacheDir: path.join(dataDir, "rss-image-cache"),
     allowPrivateHosts: Boolean(options.rss?.allowPrivateHosts),
@@ -455,6 +475,46 @@ export function createApp(options = {}) {
       return res.json(aiProvider.getStatus());
     }
     return res.json({ provider: aiProvider.name || "unknown", configured: false });
+  });
+
+  app.get("/api/ai/settings", async (req, res) => {
+    try {
+      const current = typeof aiProvider.getStatus === "function"
+        ? aiProvider.getStatus()
+        : { provider: aiProvider.name || "unknown", model: "" };
+      const hasApiKey = Boolean(process.env.AI_API_KEY);
+      return res.json({
+        provider: current.provider || "mock",
+        baseUrl: current.baseUrl || "",
+        model: current.model || "",
+        hasApiKey,
+        providers: listProviderOptions()
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai/settings", async (req, res) => {
+    try {
+      const config = normalizeAiSettingsInput(req.body);
+      const saved = await saveAiSettings(envPath, config);
+      const reloaded = reloadAiProvider(saved.config);
+      const status = reloaded.getStatus();
+      return res.json({ ok: true, ...status, hasApiKey: Boolean(saved.config.apiKey) });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.post("/api/ai/settings/test", async (req, res) => {
+    try {
+      const config = normalizeAiSettingsInput(req.body);
+      const result = await testAiConnection(config, { requestImpl: aiTestRequestImpl });
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error);
+    }
   });
 
   app.post("/api/ai/ask", async (req, res) => {
@@ -998,6 +1058,262 @@ class HttpError extends Error {
   constructor(statusCode, message) {
     super(message);
     this.statusCode = statusCode;
+  }
+}
+
+const PROVIDER_LABELS = Object.freeze({
+  deepseek: "DeepSeek",
+  openai: "OpenAI",
+  kimi: "Moonshot Kimi",
+  zhipu: "智谱 GLM",
+  qwen: "通义千问 Qwen",
+  ollama: "Ollama（本地）",
+  anthropic: "Anthropic Claude",
+  gemini: "Google Gemini",
+  "openai-compatible": "OpenAI-compatible（任意兼容服务）",
+  mock: "Mock（试用）"
+});
+
+const PROVIDER_DESCRIPTIONS = Object.freeze({
+  deepseek: "DeepSeek 官方 OpenAI 兼容接口，默认地址 https://api.deepseek.com。",
+  openai: "OpenAI 官方接口，默认地址 https://api.openai.com/v1。",
+  kimi: "月之暗面 Kimi，OpenAI 兼容，默认地址 https://api.moonshot.cn/v1。",
+  zhipu: "智谱 GLM，OpenAI 兼容，默认地址 https://open.bigmodel.cn/api/paas/v4。",
+  qwen: "通义千问 Qwen 的 OpenAI 兼容模式（DashScope compatible-mode）。",
+  ollama: "本地 Ollama 服务的 OpenAI 兼容端点（默认 http://127.0.0.1:11434/v1），无需 API Key。",
+  anthropic: "Anthropic Claude 原生 Messages 协议。",
+  gemini: "Google Gemini 原生 generateContent 协议。",
+  "openai-compatible":
+    "任意实现 OpenAI Chat Completions API（/chat/completions）的服务都可使用此项：填入服务根地址和模型即可，例如 SiliconFlow、Together、Groq、自建代理等。",
+  mock: "本地 Mock 模式，不调用真实模型，仅用于流程试用。"
+});
+
+const VALID_AI_PROVIDERS = new Set([
+  "mock",
+  "openai-compatible",
+  ...Object.keys(PROVIDER_PRESETS)
+]);
+
+function listProviderOptions() {
+  const options = Object.entries(PROVIDER_PRESETS).map(([key, preset]) => ({
+    key,
+    label: PROVIDER_LABELS[key] || key,
+    description: PROVIDER_DESCRIPTIONS[key] || "",
+    type: preset.type,
+    baseUrl: preset.baseUrl,
+    model: preset.model,
+    requiresKey: preset.requiresKey
+  }));
+  options.push({
+    key: "openai-compatible",
+    label: PROVIDER_LABELS["openai-compatible"],
+    description: PROVIDER_DESCRIPTIONS["openai-compatible"],
+    type: "openai-compatible",
+    baseUrl: "",
+    model: "",
+    requiresKey: true
+  });
+  options.push({
+    key: "mock",
+    label: PROVIDER_LABELS.mock,
+    description: PROVIDER_DESCRIPTIONS.mock,
+    type: "mock",
+    baseUrl: "",
+    model: "",
+    requiresKey: false
+  });
+  return options;
+}
+
+/** 剔除换行与控制字符，防止通过 .env 写入注入新的键。 */
+function sanitizeEnvValue(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim();
+}
+
+function normalizeAiSettingsInput(body) {
+  const provider = String(body?.provider ?? "").trim().toLowerCase();
+  if (!VALID_AI_PROVIDERS.has(provider)) {
+    throw new HttpError(400, `Unknown AI provider: ${provider}`);
+  }
+  return {
+    provider,
+    apiKey: sanitizeEnvValue(body?.apiKey),
+    baseUrl: sanitizeEnvValue(body?.baseUrl),
+    model: sanitizeEnvValue(body?.model),
+    clearKey: body?.clearKey === true
+  };
+}
+
+async function saveAiSettings(envPath, input) {
+  let updates;
+  if (input.provider === "mock") {
+    // 切回 Mock 只禁用真实接口，保留已保存的 Key 与地址，避免破坏用户配置
+    updates = { AI_PROVIDER: "mock" };
+  } else {
+    const resolved = resolveAiProviderConfig(aiSettingsToProviderConfig(input));
+    if (!resolved.model) {
+      throw new HttpError(400, "该接口需要填写模型名称（AI_MODEL）");
+    }
+    updates = {
+      AI_PROVIDER: resolved.provider,
+      AI_API_KEY: input.clearKey ? "" : resolved.apiKey,
+      AI_API_BASE: resolved.baseUrl,
+      AI_MODEL: resolved.model
+    };
+  }
+
+  await updateEnvFile(envPath, updates);
+  for (const [key, value] of Object.entries(updates)) {
+    process.env[key] = value;
+  }
+  const config = {
+    provider: updates.AI_PROVIDER,
+    apiKey: updates.AI_API_KEY ?? process.env.AI_API_KEY ?? "",
+    baseUrl: updates.AI_API_BASE ?? process.env.AI_API_BASE ?? "",
+    model: updates.AI_MODEL ?? process.env.AI_MODEL ?? ""
+  };
+  return { config };
+}
+
+function buildTestRequest(resolved) {
+  if (resolved.provider === "ollama") {
+    const root = normalizeBaseUrl(resolved.baseUrl).replace(/\/v1$/, "");
+    return { uri: `${root}/api/tags`, headers: {} };
+  }
+  if (resolved.type === "anthropic") {
+    const root = normalizeBaseUrl(resolved.baseUrl).replace(/\/v1$/, "");
+    return {
+      uri: `${root}/v1/models`,
+      headers: { "x-api-key": resolved.apiKey, "anthropic-version": "2023-06-01" }
+    };
+  }
+  if (resolved.type === "gemini") {
+    const root = normalizeBaseUrl(resolved.baseUrl).replace(/\/v1beta$/, "");
+    return { uri: `${root}/v1beta/models`, headers: { "x-goog-api-key": resolved.apiKey } };
+  }
+  const headers = resolved.apiKey ? { authorization: `Bearer ${resolved.apiKey}` } : {};
+  return { uri: `${normalizeBaseUrl(resolved.baseUrl)}/models`, headers };
+}
+
+function providerTestErrorMessage(text) {
+  const truncated = String(text || "").slice(0, 300);
+  try {
+    const payload = JSON.parse(truncated);
+    return String(payload?.error?.message || payload?.message || "request failed").slice(0, 200);
+  } catch {
+    return truncated || "request failed";
+  }
+}
+
+/** 表单中的空字符串视为「使用预设/环境默认」，避免空值覆盖预设默认地址。 */
+function aiSettingsToProviderConfig(input) {
+  return {
+    provider: input.provider,
+    apiKey: input.apiKey || process.env.AI_API_KEY || "",
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(input.model ? { model: input.model } : {})
+  };
+}
+
+/** 带 DNS rebinding 防护的 GET 请求：解析出的内网/回环地址会被 createSafeLookup 拒绝。 */
+async function requestWithLookup(url, { headers, allowPrivateHosts, signal, maxBytes = 64 * 1024 }) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error("无效的 API 地址"));
+      return;
+    }
+    const transport = parsed.protocol === "https:" ? https : http;
+    const req = transport.request(
+      parsed,
+      { method: "GET", headers, lookup: createSafeLookup({ allowPrivateHosts }) },
+      (response) => {
+        const chunks = [];
+        let received = 0;
+        response.on("data", (chunk) => {
+          received += chunk.length;
+          if (received > maxBytes) {
+            req.destroy(new Error("响应体过大"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("end", () => {
+          resolve({
+            status: response.statusCode || 0,
+            text: Buffer.concat(chunks).toString("utf8")
+          });
+        });
+      }
+    );
+    req.on("error", reject);
+    if (signal) {
+      signal.addEventListener("abort", () => req.destroy(new Error("连接超时。")), { once: true });
+    }
+    req.end();
+  });
+}
+
+async function testAiConnection(input, { requestImpl } = {}) {
+  const request = requestImpl || requestWithLookup;
+  if (input.provider === "mock") {
+    return { ok: true, message: "Mock 模式无需连接检查。" };
+  }
+  const resolved = resolveAiProviderConfig(aiSettingsToProviderConfig(input));
+  if (resolved.requiresKey && !resolved.apiKey) {
+    return { ok: false, message: "需要提供 API Key 才能测试连接。" };
+  }
+
+  // 与 RSS 抓取一致的安全基线：字面地址校验 + DNS 解析层防护。
+  // Ollama 预设指向本机回环，属于合法本地场景，字面校验放行且允许私网解析。
+  const allowPrivateHosts = resolved.provider === "ollama";
+  if (!allowPrivateHosts) {
+    try {
+      validateRemoteUrl(resolved.baseUrl);
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  }
+
+  const { uri, headers } = buildTestRequest(resolved);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await request(uri, {
+      headers,
+      signal: controller.signal,
+      allowPrivateHosts
+    });
+    if (response.status < 200 || response.status >= 300) {
+      return {
+        ok: false,
+        message: `连接失败（HTTP ${response.status}）：${providerTestErrorMessage(response.text)}`
+      };
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(response.text);
+    } catch {
+      // 忽略无法解析的响应体
+    }
+    const models = Array.isArray(payload?.data)
+      ? payload.data.map((item) => item?.id).filter(Boolean)
+      : [];
+    if (models.length && resolved.model && !models.includes(resolved.model)) {
+      return { ok: true, message: `连接成功，但模型列表中没有 ${resolved.model}，请核对模型名称。`, models };
+    }
+    return { ok: true, message: "连接成功。", models };
+  } catch (error) {
+    const message = error.message === "连接超时。" || error.name === "AbortError"
+      ? "连接超时。"
+      : `连接失败：${error.message}`;
+    return { ok: false, message };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

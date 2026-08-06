@@ -2275,15 +2275,74 @@ select:focus-visible {
   border: 1px solid #bfdad4;
   border-radius: var(--radius-md);
   color: var(--teal-dark);
+  cursor: pointer;
   font-size: 13px;
   line-height: 1.5;
   padding: 9px 12px;
+  text-align: left;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.ai-status:hover {
+  border-color: var(--teal);
+  box-shadow: 0 1px 3px rgba(45, 73, 78, 0.12);
+}
+
+.ai-status:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 
 .ai-status.is-warning {
   background: #fff7ed;
   border-color: #fed7aa;
   color: #9a3412;
+}
+
+.ai-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-settings-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ai-settings-field span small {
+  margin-left: 6px;
+  opacity: 0.8;
+}
+
+.ai-settings-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-settings-clear-key {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.ai-settings-clear-key:hover {
+  color: var(--rose);
+}
+
+.ai-settings-clear-key:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+#ai-settings-status.is-error {
+  color: var(--rose);
 }
 
 .quick-actions {
@@ -3378,6 +3437,29 @@ select:focus-visible {
   border-radius: 6px;
   cursor: pointer;
   padding: 3px 8px;
+}
+
+.rss-ai-status-btn {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.rss-ai-status-btn svg {
+  height: 16px;
+  width: 16px;
+}
+
+.rss-ai-status-btn.is-warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.app-shell.rss-mode .rss-list-title-row button.rss-ai-status-btn.is-warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
 }
 
 .rss-list-back {

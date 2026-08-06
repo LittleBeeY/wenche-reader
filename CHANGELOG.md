@@ -6,6 +6,9 @@
 
 ### 功能
 
+- AI 接口配置重构为「预设 + 传输层适配器」：`AI_PROVIDER` 支持厂商预设（`deepseek`/`openai`/`kimi`/`zhipu`/`qwen`/`ollama`/`anthropic`/`gemini`）与原生传输层（`openai-compatible`/`anthropic`/`gemini`），新增 Anthropic Messages 与 Google Gemini 原生协议适配器；`config:ai` 脚本改为接口选择菜单并按接口类型检查连接。
+- 行为变化：`AI_PROVIDER` 拼写错误时启动直接报错（不再静默退回 Mock）；本地 Ollama 预设无需 API Key；`AI_API_BASE`/`AI_MODEL` 仍可覆盖预设默认值；AI 历史记录的 provider 显示预设名（如 `deepseek`）而非传输层类型。
+- AI 接口改在应用内配置：点击 AI 面板顶部状态栏打开设置对话框，选择接口、填写 Key、测试连接并保存；保存后立即生效无需重启，`/api/ai/settings` 读写 `.env`（不回显 Key、留空保持原 Key、保留注释与其他配置），`/api/ai/settings/test` 按接口类型检查连接。命令行 `config:ai` 保留为可选兜底。
 - 新增“资讯”一级模式（RSS 2.0 / Atom 1.0）：粘贴 Feed 或网站地址自动探测订阅，订阅源分组、重命名、优先级、暂停与失败重试。
 - OPML 批量导入（先预览并区分新增、重复、可恢复与无效条目）与导出。
 - 资讯收件箱：未读/全部/已读筛选、收藏、稍后读、不感兴趣、搜索、紧凑/摘要/卡片三种密度与批量状态操作；全部标记已读需二次确认。

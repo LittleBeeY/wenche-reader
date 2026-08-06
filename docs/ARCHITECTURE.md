@@ -13,10 +13,10 @@
 | `public/rssView.js` | 资讯导航、订阅树、带明确日期时间的三种密度资讯列表、今日精选、文章操作条、OPML 与偏好设置对话框 |
 | `public/rssState.js` | 资讯列表视图偏好（范围、筛选、排序、密度）的浏览器本地持久化 |
 | `public/disclosureState.js` | 资讯订阅分组与本地文档资料夹展开状态的浏览器本地持久化 |
-| `src/server.js` | 静态资源、文档/归档/标注/AI/备份 API、上传文件生命周期 |
+| `src/server.js` | 静态资源、文档/归档/标注/AI/备份 API、AI 接口设置读写与连接测试、上传文件生命周期 |
 | `src/lib/documentParser.js` | TXT、Markdown、HTML、PDF、DOCX、EPUB 解析和 HTML/CSS 清洗；导出供 RSS 复用的文章级清洗与快照解析入口 |
 | `src/lib/storage.js` | SQLite 建表、迁移、事务和查询（含 RSS 全部表） |
-| `src/lib/aiProvider.js` | Mock 与 OpenAI-compatible provider、三种回答模式的提示词/生成预算、Token 与延迟统计和流式响应解析 |
+| `src/lib/aiProvider.js` | Provider 预设表与适配器注册表（openai-compatible、Anthropic、Gemini、Mock）、三种回答模式的提示词/生成预算、Token 与延迟统计和流式响应解析 |
 | `src/lib/answerCitations.js` | 校验模型返回的稳定来源 ID，移除不在本次来源包中的引用 |
 | `src/lib/markdownExport.js` | 将阅读标注和已沉淀 AI 回答导出为 Markdown |
 | `src/lib/selectionContext.js` | 按选区、页、章节或全文组装有长度预算的来源包，并保留章节路径 |
@@ -42,13 +42,14 @@
 5. 左侧栏把本地文档、资讯与添加文档保留为一级入口，把导入位置、文档管理和备份恢复收进“更多”，并可缩成 72px 图标轨道；侧栏、文档库、文件夹筛选和各资料夹的开合状态保存在浏览器本地。字号、内容宽度、行距和明亮/护眼/夜间主题也保存在浏览器本地；普通阅读按相对字号整体缩放，DOCX 高保真模式统一缩放整个 Word 页面。侧栏宽度动画结束后会重新适配 HTML 和 DOCX 内容。AI 解析面板以悬浮层覆盖正文，支持拖动、缩放和收纳为可拖动紧凑入口；展开面板与收纳入口的位置、尺寸和开合状态分别保存在浏览器本地，窄屏进入时强制收纳以保持导航可操作。沉浸阅读只改变当前布局，不覆盖原侧栏状态。
 6. 普通正文、HTML iframe 和 DOCX 渲染节点会按顺序绑定真实块 ID；划词后生成 `blockId + startOffset + endOffset` 锚点。AI 请求显式携带 `selection/page/section/document` 范围。
 7. 选区和页范围按块 ID取上下文；章节范围由最近的上级标题边界确定；全文范围先查询 `blocks_fts` 的 FTS5/BM25 排名，再补入章节标题和相邻段落。每个来源使用 `[source:Bn]` 稳定标识并受模式长度预算限制。
-8. 标题、选区和来源正文被放入不可信资料区，提示词明确禁止执行文章内指令。直接和深入模式都只解释文字意思，深入模式解释得更完整；它们与自定义模式使用不同结构、温度与输出上限。
-9. 浏览器通过 `Accept: text/event-stream` 请求 AI，`start` 事件携带范围和来源元数据，Provider 的增量内容以 `delta` 返回；服务端在完成后校验 `[cite:Bn]`，只保存真实来源引用，再发送 `done`。前端节流 Markdown 渲染并经 DOMPurify 清洗。
-10. AI 历史记录同时保存范围、选区锚点、上下文块、来源元数据、模型、提示词版本、输入/输出 Token、首字延迟与总延迟；完整回答结束后才入库。
-11. 高亮、批注、书签和 AI 回答沉淀写入 SQLite；前端原地更新高亮 DOM并保持滚动位置，点击高亮可通过标注 API 删除；Markdown 导出只读取这些结构化记录。
-12. 备份导出把数据库快照和原始文件编码到一个 JSON 文件中，排除 `.env`；恢复时先写新文件，再用事务替换结构化数据。
-13. 资讯流：调度器每分钟检查到期订阅源，条件请求拉取 Feed，按 GUID → 规范地址 → 标题+日期 → 内容指纹去重入库；相同去重键的 Feed 内容变化会更新条目而不重置阅读状态。打开条目时把清洗后的正文组装为受控 HTML，经 `documentParser.js` 生成隐藏阅读快照（`uploads/rss/`），AI 回答、标注与引用都绑定该快照；取消订阅只软删除 Feed，已收藏、稍后读和有沉淀的快照常驻。
-14. 网页全文提取会把条目标记为 `content_source=extracted`，后续 Feed 刷新不会用较短的 Feed 正文覆盖它。正文中的远程及懒加载图片地址统一改写到 `/api/rss/images`，浏览器只读取同源缓存；历史正文若仍含无地址图片，首次打开时自动重提取。若当前快照尚无标注或 AI 记录，提取后原地重建快照；已有阅读资产时保留正文块与稳定 ID，仅在图片块数量和替代文本完全对应时补写图片地址，避免 AI 引用错位。
+8. 标题、选区和来源正文被放入不可信资料区，提示词明确禁止执行文章内指令。直接和深入模式都只解释文字意思，深入模式解释得更完整；它们与自定义模式使用不同结构、温度与输出上限。应用只依赖 provider adapter 的统一契约（`explain`/`streamExplain`/`getStatus` 与标准化结果），各厂商的端点路径、鉴权头、请求/响应/流式映射都收在 `aiProvider.js` 的适配器内。
+9. AI 接口在应用内配置：设置对话框通过 `GET/POST /api/ai/settings` 读写 `.env`（保留注释与其他键、不回显 Key、留空保持原 Key），保存后服务端重建 provider 实例并通过 `RssService.setAiProvider` 同步给资讯初评；`POST /api/ai/settings/test` 按接口类型发起连接检查。
+10. 浏览器通过 `Accept: text/event-stream` 请求 AI，`start` 事件携带范围和来源元数据，Provider 的增量内容以 `delta` 返回；服务端在完成后校验 `[cite:Bn]`，只保存真实来源引用，再发送 `done`。前端节流 Markdown 渲染并经 DOMPurify 清洗。
+11. AI 历史记录同时保存范围、选区锚点、上下文块、来源元数据、模型、提示词版本、输入/输出 Token、首字延迟与总延迟；完整回答结束后才入库。
+12. 高亮、批注、书签和 AI 回答沉淀写入 SQLite；前端原地更新高亮 DOM并保持滚动位置，点击高亮可通过标注 API 删除；Markdown 导出只读取这些结构化记录。
+13. 备份导出把数据库快照和原始文件编码到一个 JSON 文件中，排除 `.env`；恢复时先写新文件，再用事务替换结构化数据。
+14. 资讯流：调度器每分钟检查到期订阅源，条件请求拉取 Feed，按 GUID → 规范地址 → 标题+日期 → 内容指纹去重入库；相同去重键的 Feed 内容变化会更新条目而不重置阅读状态。打开条目时把清洗后的正文组装为受控 HTML，经 `documentParser.js` 生成隐藏阅读快照（`uploads/rss/`），AI 回答、标注与引用都绑定该快照；取消订阅只软删除 Feed，已收藏、稍后读和有沉淀的快照常驻。
+15. 网页全文提取会把条目标记为 `content_source=extracted`，后续 Feed 刷新不会用较短的 Feed 正文覆盖它。正文中的远程及懒加载图片地址统一改写到 `/api/rss/images`，浏览器只读取同源缓存；历史正文若仍含无地址图片，首次打开时自动重提取。若当前快照尚无标注或 AI 记录，提取后原地重建快照；已有阅读资产时保留正文块与稳定 ID，仅在图片块数量和替代文本完全对应时补写图片地址，避免 AI 引用错位。
 
 ## 数据模型
 
@@ -84,6 +85,9 @@
 | `GET/POST` | `/api/archives` | 获取或创建归档 |
 | `PATCH/DELETE` | `/api/archives/:id` | 重命名或删除空归档 |
 | `GET` | `/api/ai/status` | 返回 provider 配置状态，不返回密钥 |
+| `GET` | `/api/ai/settings` | 返回当前 AI 配置（不回显 Key）与可选 provider 预设列表 |
+| `POST` | `/api/ai/settings` | 保存 AI 配置到 `.env` 并立即重建 provider 实例 |
+| `POST` | `/api/ai/settings/test` | 用提交或已存的配置测试 provider 连接 |
 | `POST` | `/api/ai/explain` | 直接解析或深入解析 |
 | `POST` | `/api/ai/ask` | 自定义问题 |
 | `PATCH` | `/api/ai/records/:id` | 沉淀、编辑或移出一条 AI 回答 |

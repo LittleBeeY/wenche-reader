@@ -1,20 +1,34 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createApp } from "../src/server.js";
 import { consumeEventStream } from "../public/aiStream.js";
 
+const AI_ENV_KEYS = ["AI_PROVIDER", "AI_API_KEY", "AI_API_BASE", "AI_MODEL"];
+
+function restoreAiEnv(t) {
+  const saved = Object.fromEntries(AI_ENV_KEYS.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const key of AI_ENV_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+}
+
 async function withTestServer(t, options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "ai-reader-"));
   const app = createApp({
     dataDir: path.join(root, "data"),
     uploadDir: path.join(root, "uploads"),
+    envPath: options.envPath || path.join(root, ".env"),
     aiProvider: options.aiProvider,
     aiProviderConfig: options.aiProviderConfig || { provider: "mock" },
     aiRequestTimeoutMs: options.aiRequestTimeoutMs,
-    uploadLimits: options.uploadLimits
+    uploadLimits: options.uploadLimits,
+    aiTestRequestImpl: options.aiTestRequestImpl
   });
   options.onRoot?.(root);
   options.onApp?.(app);
@@ -83,6 +97,251 @@ test("reports ai provider status without exposing secrets", async (t) => {
   assert.equal(status.configured, false);
   assert.equal(status.model, "example-model");
   assert.ok(!("apiKey" in status));
+});
+
+test("lists AI provider options without exposing the saved key", async (t) => {
+  restoreAiEnv(t);
+  const baseUrl = await withTestServer(t);
+
+  const response = await fetch(`${baseUrl}/api/ai/settings`);
+  assert.equal(response.status, 200);
+  const settings = await response.json();
+
+  assert.equal(settings.provider, "mock");
+  assert.equal(settings.hasApiKey, false);
+  assert.ok(!("apiKey" in settings));
+  assert.ok(Array.isArray(settings.providers));
+  const keys = settings.providers.map((item) => item.key);
+  assert.ok(keys.includes("deepseek"));
+  assert.ok(keys.includes("anthropic"));
+  assert.ok(keys.includes("gemini"));
+  assert.ok(keys.includes("openai-compatible"));
+  assert.ok(keys.includes("mock"));
+  const deepseek = settings.providers.find((item) => item.key === "deepseek");
+  assert.equal(deepseek.baseUrl, "https://api.deepseek.com");
+  assert.equal(deepseek.model, "deepseek-v4-flash");
+  // 每个选项附带说明，UI 可用于悬停提示或附加描述
+  assert.ok(typeof deepseek.description === "string" && deepseek.description.length > 0);
+  const openaiCompatible = settings.providers.find((item) => item.key === "openai-compatible");
+  assert.match(openaiCompatible.description, /OpenAI Chat Completions/);
+});
+
+test("saves AI settings, persists to the env file, and reloads the provider", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  const baseUrl = await withTestServer(t, { envPath });
+
+  const save = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "secret-key" })
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.provider, "deepseek");
+  assert.equal(saved.configured, true);
+  assert.equal(saved.model, "deepseek-v4-flash");
+  assert.equal(saved.hasApiKey, true);
+
+  const status = await (await fetch(`${baseUrl}/api/ai/status`)).json();
+  assert.equal(status.provider, "deepseek");
+  assert.equal(status.configured, true);
+
+  const envText = await readFile(envPath, "utf8");
+  assert.match(envText, /AI_PROVIDER=deepseek/);
+  assert.match(envText, /AI_API_KEY=secret-key/);
+  assert.match(envText, /AI_API_BASE=https:\/\/api\.deepseek\.com/);
+
+  const backToMock = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "mock" })
+  });
+  assert.equal(backToMock.status, 200);
+  const mockStatus = await (await fetch(`${baseUrl}/api/ai/status`)).json();
+  assert.equal(mockStatus.provider, "mock");
+  // 切回 Mock 只禁用真实接口，不删除已保存的 Key
+  const mockEnv = await readFile(envPath, "utf8");
+  assert.match(mockEnv, /AI_PROVIDER=mock/);
+  assert.match(mockEnv, /AI_API_KEY=secret-key/);
+});
+
+test("keeps the saved API key when the submitted key is empty", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  const baseUrl = await withTestServer(t, { envPath });
+
+  await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "keep-me" })
+  });
+
+  const save = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", model: "deepseek-chat", apiKey: "" })
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.model, "deepseek-chat");
+  assert.equal(saved.hasApiKey, true);
+  assert.match(await readFile(envPath, "utf8"), /AI_API_KEY=keep-me/);
+});
+
+test("rejects unknown AI providers when saving settings", async (t) => {
+  restoreAiEnv(t);
+  const baseUrl = await withTestServer(t);
+  const response = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "not-a-provider", apiKey: "k" })
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Unknown AI provider/);
+});
+
+test("clears the saved API key when clearKey is requested", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  const baseUrl = await withTestServer(t, { envPath });
+
+  await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "remove-me" })
+  });
+
+  const response = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", model: "deepseek-chat", clearKey: true })
+  });
+  assert.equal(response.status, 200);
+  const saved = await response.json();
+  assert.equal(saved.hasApiKey, false);
+  assert.match(await readFile(envPath, "utf8"), /AI_API_KEY=$/m);
+});
+
+test("strips control characters that could inject extra env keys", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  const baseUrl = await withTestServer(t, { envPath });
+
+  const response = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "sk-ok\nAI_PROVIDER=anthropic", model: "m" })
+  });
+  assert.equal(response.status, 200);
+  const envText = await readFile(envPath, "utf8");
+  assert.match(envText, /AI_API_KEY=sk-okAI_PROVIDER=anthropic/);
+  assert.ok(!/^AI_PROVIDER=anthropic$/m.test(envText), "不应注入新键");
+});
+
+test("blocks connection tests to loopback addresses for non-local providers", async (t) => {
+  restoreAiEnv(t);
+  const baseUrl = await withTestServer(t);
+  const response = await fetch(`${baseUrl}/api/ai/settings/test`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "deepseek",
+      apiKey: "k",
+      baseUrl: "http://127.0.0.1:9999/v1",
+      model: "m"
+    })
+  });
+  const result = await response.json();
+  assert.equal(result.ok, false);
+  assert.match(result.message, /本机或内网/);
+});
+
+test("allows connection tests to the local Ollama endpoint", async (t) => {
+  restoreAiEnv(t);
+  let requestUrl;
+  let allowPrivateHosts;
+  const baseUrl = await withTestServer(t, {
+    aiTestRequestImpl: async (uri, options) => {
+      requestUrl = String(uri);
+      allowPrivateHosts = options.allowPrivateHosts;
+      return { status: 200, text: JSON.stringify({ models: [{ name: "llama3.1" }] }) };
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/api/ai/settings/test`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "ollama", model: "llama3.1" })
+  });
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(requestUrl, "http://127.0.0.1:11434/api/tags");
+  assert.equal(allowPrivateHosts, true);
+});
+
+test("tests provider connection with the submitted config", async (t) => {
+  restoreAiEnv(t);
+  let requestUrl;
+  let requestHeaders;
+  const baseUrl = await withTestServer(t, {
+    aiTestRequestImpl: async (uri, options) => {
+      requestUrl = String(uri);
+      requestHeaders = options.headers;
+      return { status: 200, text: JSON.stringify({ data: [{ id: "deepseek-v4-flash" }] }) };
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/api/ai/settings/test`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "k", model: "deepseek-v4-flash" })
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(requestUrl, "https://api.deepseek.com/models");
+  assert.equal(requestHeaders.authorization, "Bearer k");
+});
+
+test("tests connection for anthropic using native headers", async (t) => {
+  restoreAiEnv(t);
+  let requestUrl;
+  let requestHeaders;
+  const baseUrl = await withTestServer(t, {
+    aiTestRequestImpl: async (uri, options) => {
+      requestUrl = String(uri);
+      requestHeaders = options.headers;
+      return { status: 200, text: JSON.stringify({ data: [{ id: "claude-sonnet-4-20250514" }] }) };
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/api/ai/settings/test`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "anthropic", apiKey: "k", model: "claude-test" })
+  });
+  const result = await response.json();
+  assert.equal(result.ok, true);
+  assert.equal(requestUrl, "https://api.anthropic.com/v1/models");
+  assert.equal(requestHeaders["x-api-key"], "k");
+  assert.equal(requestHeaders["anthropic-version"], "2023-06-01");
 });
 
 test("uploads a document and reads normalized blocks", async (t) => {

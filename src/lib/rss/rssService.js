@@ -41,6 +41,11 @@ export class RssService {
     this.refreshState = { running: false, lastRunAt: null, lastResult: null };
   }
 
+  /** 应用内修改 AI 配置后，让本服务切换到新的 provider 实例。 */
+  setAiProvider(aiProvider) {
+    this.aiProvider = aiProvider;
+  }
+
   // ---------- 发现与添加 ----------
 
   async discover(url) {

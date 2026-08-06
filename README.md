@@ -48,8 +48,6 @@ npm.cmd start
 Windows 一键入口：
 
 - 双击 `scripts\open-reader.cmd`：安装缺失依赖、启动服务并打开网页。
-- 双击 `scripts\config-ai.cmd`：交互式配置 DeepSeek 或其他 OpenAI-compatible API，并检查模型连接。
-- 终端中也可以运行 `npm.cmd run open` 和 `npm.cmd run config:ai`。
 
 如果端口 `3000` 被占用：
 
@@ -62,16 +60,18 @@ npm.cmd start
 
 默认使用 Mock provider，方便在没有 API Key 时测试阅读和交互流程，但不会产生真实模型回答。
 
-推荐直接运行：
+**在应用内配置**：打开网页后，点击左侧 AI 面板顶部的「AI 接口」状态栏（如“AI 接口：Mock 模式”），或在资讯首页标题栏点击 AI 按钮，在弹出的对话框中：
 
-```powershell
-npm.cmd run config:ai
-```
+1. 选择 AI 接口（DeepSeek、OpenAI、Kimi、智谱 GLM、通义千问 Qwen、本地 Ollama、Anthropic Claude、Google Gemini 或自定义 OpenAI-compatible 服务）；
+2. 填写 API Key（Ollama 可留空）；根地址和模型已按所选接口带入默认值，可按需修改；
+3. 点击「测试连接」验证，再点「保存设置」。
 
-脚本默认配置 DeepSeek，API Key 输入时不会在终端回显；保存后会通过 `/models` 检查连接和模型名称：
+保存后立即生效，无需重启服务。已保存的 Key 不会回显在页面上，留空保存表示保持不变。
+
+配置信息存放在项目根目录的 `.env` 中，也可以手动编辑。`AI_PROVIDER` 可以是厂商预设名，预设会自动带入根地址与默认模型，`AI_API_BASE` 和 `AI_MODEL` 可覆盖：
 
 ```dotenv
-AI_PROVIDER=openai-compatible
+AI_PROVIDER=deepseek
 AI_API_KEY=your_api_key
 AI_API_BASE=https://api.deepseek.com
 AI_MODEL=deepseek-v4-flash
@@ -79,7 +79,11 @@ PORT=3000
 HOST=127.0.0.1
 ```
 
-修改 `.env` 后需要重启服务。任何提供 `/chat/completions` 的 OpenAI-compatible 服务也可以使用。
+支持的预设：`deepseek`、`openai`、`kimi`、`zhipu`、`qwen`、`ollama`（本地，无需 Key）、`anthropic`、`gemini`。也可以直接用传输层类型 `openai-compatible`（任意提供 `/chat/completions` 的服务）、`anthropic` 或 `gemini`，此时地址与模型必须自备。
+
+> **接入新的模型怎么办？** 分两类：
+> - **OpenAI 兼容协议的服务**（绝大多数国产/海外 API 都属于这一类，例如 SiliconFlow、Together、Groq、自建代理、本地 vLLM/LM Studio）：在设置对话框选择 **OpenAI-compatible（任意兼容服务）**，填入服务根地址和模型即可，**不需要改代码**。
+> - **不兼容 OpenAI 协议的服务**（目前只有 Anthropic 和 Gemini 是规模大到值得适配的）：在 `src/lib/aiProvider.js` 注册一个新的适配器（参考 `createAnthropicAdapter` / `createGeminiAdapter`），并在 `PROVIDER_PRESETS` 中加一项预设（一行 + 一行标签），无需改动路由或前端。
 
 ## 本地数据与隐私
 
