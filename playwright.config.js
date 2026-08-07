@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // 桌面版 E2E 只由 playwright.desktop.config.js 运行（需要 Electron 窗口/图形环境）。
+  testIgnore: "**/desktop.spec.js",
   fullyParallel: false,
   workers: 1,
   timeout: 45000,
