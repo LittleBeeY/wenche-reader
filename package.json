@@ -36,7 +36,7 @@
     "express": "^4.22.1",
     "jszip": "3.10.1",
     "mammoth": "^1.8.0",
-    "marked": "^18.0.5",
+    "marked": "^18.0.7",
     "pdf-parse": "^2.4.5",
     "sanitize-html": "^2.13.0"
   },
