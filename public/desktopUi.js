@@ -3,9 +3,13 @@
 (function initDesktopUi() {
   const api = window.wencheDesktop;
   if (!api) return;
-  const panel = document.getElementById("desktop-about");
-  if (!panel) return;
-  panel.hidden = false;
+  const aboutDialog = document.getElementById("desktop-about-dialog");
+  if (!aboutDialog) return;
+
+  const sidebarOpenButton = document.getElementById("desktop-about-open");
+  const rssOpenButton = document.getElementById("rss-open-desktop-about");
+  sidebarOpenButton.hidden = false;
+  rssOpenButton.hidden = false;
 
   const versionElement = document.getElementById("desktop-version");
   const stateElement = document.getElementById("desktop-update-state");
@@ -13,6 +17,7 @@
   const installButton = document.getElementById("desktop-install-update");
   const logsButton = document.getElementById("desktop-open-logs");
   const uninstallButton = document.getElementById("desktop-uninstall");
+  const cancelButton = document.getElementById("desktop-about-cancel");
 
   const STATE_LABELS = {
     disabled: "更新未启用",
@@ -39,10 +44,24 @@
   const unsubscribe = api.onUpdateState(renderUpdateState);
   window.addEventListener("beforeunload", () => unsubscribe(), { once: true });
 
+  function openAboutDialog() {
+    document
+      .querySelector(".rss-article-more")
+      ?.removeAttribute("open");
+    if (!aboutDialog.open) aboutDialog.showModal();
+  }
+
+  sidebarOpenButton?.addEventListener("click", openAboutDialog);
+  rssOpenButton?.addEventListener("click", openAboutDialog);
+  cancelButton?.addEventListener("click", () => aboutDialog.close());
+
   checkButton?.addEventListener("click", async () => {
     const result = await api.checkForUpdates();
-    if (!result?.accepted && stateElement) {
-      stateElement.textContent = "当前无法检查更新";
+    if (result?.accepted || !stateElement) return;
+    if (result.reason === "error") {
+      stateElement.textContent = "更新检查失败";
+    } else {
+      stateElement.textContent = "更新未启用（未配置更新源，正式发布后可用）";
     }
   });
   installButton?.addEventListener("click", () => void api.restartToInstallUpdate());

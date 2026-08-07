@@ -633,6 +633,49 @@ select:focus-visible {
   padding: 5px 0 8px;
 }
 
+.sidebar-command {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 12px;
+  font-weight: 750;
+  justify-content: flex-start;
+  margin-top: 9px;
+  min-height: 34px;
+  padding: 4px 2px;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebar-command:hover {
+  background: none;
+  box-shadow: none;
+}
+
+.sidebar-command:hover span {
+  color: var(--teal-dark);
+}
+
+#desktop-about-dialog p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.desktop-about-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 4px;
+}
+
 .import-disclosure {
   border-top: 0;
   margin-top: 3px;
@@ -4716,16 +4759,6 @@ select:focus-visible {
 @media (min-width: 761px) and (max-width: 1439px) {
   .app-shell.rss-mode.rss-reading {
     grid-template-columns: minmax(0, 1fr) var(--right-panel-width);
-  }
-
-  .app-shell.rss-mode.rss-reading .ai-panel {
-    box-shadow: none;
-    height: 100vh;
-    left: auto;
-    min-height: 0;
-    position: static;
-    right: auto;
-    width: auto;
   }
 }
 

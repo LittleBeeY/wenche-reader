@@ -62,8 +62,11 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   await expect(page).toHaveTitle(/文澈阅读/);
   await expect(page.locator("#app-shell")).toBeVisible();
   await page.locator("#sidebar-more > summary").click();
-  await expect(page.locator("#desktop-about")).toBeVisible();
+  await expect(page.locator("#desktop-about-open")).toBeVisible();
+  await page.locator("#desktop-about-open").click();
+  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await page.locator("#desktop-about-cancel").click();
 
   const sandbox = await page.evaluate(() => ({
     hasRequire: typeof window.require !== "undefined",
@@ -279,13 +282,95 @@ test("exposes an in-app uninstall entry that stays safe in dev mode", async ({
 }) => {
   const { page } = desktopApp;
   await page.locator("#sidebar-more > summary").click();
-  await page.locator("#desktop-about > summary").click();
+  await page.locator("#desktop-about-open").click();
+  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
   const uninstallButton = page.locator("#desktop-uninstall");
   await expect(uninstallButton).toBeVisible();
   await uninstallButton.click();
   await expect(page.locator("#desktop-update-state")).toContainText(
     "开发模式不支持应用内卸载"
   );
+});
+
+test("explains that updates are disabled before a feed is configured", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#desktop-about-open").click();
+  await page.locator("#desktop-check-updates").click();
+  await expect(page.locator("#desktop-update-state")).toContainText(
+    "更新未启用"
+  );
+});
+
+test("keeps the RSS article AI panel floating with a visible launcher", async ({
+  desktopApp
+}) => {
+  const { app, page } = desktopApp;
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setMinimumSize(400, 300);
+    win.setSize(1280, 800);
+    win.setPosition(0, 0);
+  });
+  await page.waitForTimeout(400);
+  const geometry = await page.evaluate((collapsed) => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("rss-mode", "rss-reading");
+    shell.classList.toggle("is-right-collapsed", collapsed);
+    const panel = document.querySelector("#ai-panel").getBoundingClientRect();
+    const toggle = document.querySelector("#toggle-ai-panel").getBoundingClientRect();
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
+    const visible = (rect) =>
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.left >= 0 &&
+      rect.top >= 0 &&
+      rect.right <= viewport.width &&
+      rect.bottom <= viewport.height;
+    return {
+      panelVisible: visible(panel),
+      toggleVisible: visible(toggle),
+      toggle: { left: toggle.left, top: toggle.top, width: toggle.width, height: toggle.height }
+    };
+  }, false);
+  expect(geometry.panelVisible).toBe(true);
+
+  const collapsed = await page.evaluate(() => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("is-right-collapsed");
+    const toggle = document.querySelector("#toggle-ai-panel").getBoundingClientRect();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    return (
+      toggle.width > 0 &&
+      toggle.height > 0 &&
+      toggle.left >= 0 &&
+      toggle.top >= 0 &&
+      toggle.right <= viewport.width &&
+      toggle.bottom <= viewport.height
+    );
+  });
+  expect(collapsed).toBe(true);
+});
+
+test("opens the desktop about dialog from the RSS article menu", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.evaluate(() => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("rss-mode", "rss-reading");
+    document.querySelector(".rss-article-bar").hidden = false;
+  });
+  await page.locator(".rss-article-more > summary").click();
+  await page.locator("#rss-open-desktop-about").click();
+  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
+  await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await page.locator("#desktop-about-cancel").click();
 });
 
 test("keeps the AI panel inside a small restored window", async ({

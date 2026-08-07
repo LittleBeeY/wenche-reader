@@ -264,21 +264,9 @@
               </div>
             </details>
 
-            <details id="desktop-about" class="sidebar-disclosure desktop-only" hidden>
-              <summary>
-                <span>关于与更新</span>
-              </summary>
-              <div class="sidebar-disclosure-body desktop-about-body">
-                <p id="desktop-version"></p>
-                <p id="desktop-update-state"></p>
-                <div class="desktop-about-actions">
-                  <button id="desktop-check-updates" type="button">检查更新</button>
-                  <button id="desktop-install-update" type="button" hidden>重启并安装</button>
-                  <button id="desktop-open-logs" type="button">打开日志目录</button>
-                  <button id="desktop-uninstall" type="button">卸载应用</button>
-                </div>
-              </div>
-            </details>
+            <button id="desktop-about-open" type="button" class="sidebar-command desktop-only" hidden>
+              <span>关于与更新</span>
+            </button>
           </div>
         </details>
       </aside>
@@ -409,6 +397,13 @@
                       <path d="M5 5l14 14M9.5 4.8A9.7 9.7 0 0 1 12 4c5.5 0 9 8 9 8a17 17 0 0 1-2.1 3.4M6.2 6.2C4.1 8 3 12 3 12s3.5 8 9 8a8.8 8.8 0 0 0 3.1-.6M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
                     </svg>
                     <span data-rss-action-label>减少此类推荐</span>
+                  </button>
+                  <button type="button" id="rss-open-desktop-about" class="desktop-only" role="menuitem" hidden>
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9"></circle>
+                      <path d="M12 11v5M12 8v.01"></path>
+                    </svg>
+                    <span>关于与更新</span>
                   </button>
                 </div>
               </details>
@@ -778,6 +773,23 @@
           <button value="cancel" type="button" id="ai-settings-cancel">取消</button>
           <button type="button" id="ai-settings-test">测试连接</button>
           <button type="button" id="ai-settings-save">保存设置</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="desktop-about-dialog" class="rss-dialog">
+      <form method="dialog">
+        <h2>关于与更新</h2>
+        <p id="desktop-version"></p>
+        <p id="desktop-update-state"></p>
+        <div class="desktop-about-actions">
+          <button id="desktop-check-updates" type="button">检查更新</button>
+          <button id="desktop-install-update" type="button" hidden>重启并安装</button>
+          <button id="desktop-open-logs" type="button">打开日志目录</button>
+          <button id="desktop-uninstall" type="button">卸载应用</button>
+        </div>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="desktop-about-cancel">关闭</button>
         </div>
       </form>
     </dialog>

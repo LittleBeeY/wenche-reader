@@ -360,8 +360,11 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("wenche:check-for-updates", (event) => {
     if (!isTrustedSender(event)) return { accepted: false };
-    if (!updater) return { accepted: false };
-    return updater.checkForUpdates().then((accepted) => ({ accepted }));
+    if (!updater) return { accepted: false, reason: "disabled" };
+    return updater.checkForUpdates().then((accepted) => ({
+      accepted,
+      ...(accepted ? {} : { reason: updater.getState().state === "error" ? "error" : "disabled" })
+    }));
   });
   ipcMain.handle("wenche:restart-to-install-update", (event) => {
     if (!isTrustedSender(event)) return { accepted: false };
