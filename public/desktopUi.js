@@ -3,13 +3,9 @@
 (function initDesktopUi() {
   const api = window.wencheDesktop;
   if (!api) return;
-  const aboutDialog = document.getElementById("desktop-about-dialog");
-  if (!aboutDialog) return;
-
-  const sidebarOpenButton = document.getElementById("desktop-about-open");
-  const rssOpenButton = document.getElementById("rss-open-desktop-about");
-  if (sidebarOpenButton) sidebarOpenButton.hidden = false;
-  if (rssOpenButton) rssOpenButton.hidden = false;
+  const aboutTab = document.querySelector('[data-settings-tab="about"]');
+  if (!aboutTab) return;
+  aboutTab.hidden = false;
 
   const versionElement = document.getElementById("desktop-version");
   const stateElement = document.getElementById("desktop-update-state");
@@ -17,7 +13,6 @@
   const installButton = document.getElementById("desktop-install-update");
   const logsButton = document.getElementById("desktop-open-logs");
   const uninstallButton = document.getElementById("desktop-uninstall");
-  const cancelButton = document.getElementById("desktop-about-cancel");
 
   const STATE_LABELS = {
     disabled: "更新未启用",
@@ -43,17 +38,6 @@
 
   const unsubscribe = api.onUpdateState(renderUpdateState);
   window.addEventListener("beforeunload", () => unsubscribe(), { once: true });
-
-  function openAboutDialog() {
-    document
-      .querySelector(".rss-article-more")
-      ?.removeAttribute("open");
-    if (!aboutDialog.open) aboutDialog.showModal();
-  }
-
-  sidebarOpenButton?.addEventListener("click", openAboutDialog);
-  rssOpenButton?.addEventListener("click", openAboutDialog);
-  cancelButton?.addEventListener("click", () => aboutDialog.close());
 
   checkButton?.addEventListener("click", async () => {
     const result = await api.checkForUpdates();

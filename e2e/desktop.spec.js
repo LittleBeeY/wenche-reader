@@ -62,11 +62,12 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   await expect(page).toHaveTitle(/文澈阅读/);
   await expect(page.locator("#app-shell")).toBeVisible();
   await page.locator("#sidebar-more > summary").click();
-  await expect(page.locator("#desktop-about-open")).toBeVisible();
-  await page.locator("#desktop-about-open").click();
-  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
+  await expect(page.locator("#sidebar-settings-open")).toBeVisible();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
-  await page.locator("#desktop-about-cancel").click();
+  await page.locator("#settings-close").click();
 
   const sandbox = await page.evaluate(() => ({
     hasRequire: typeof window.require !== "undefined",
@@ -222,12 +223,15 @@ test("saves AI settings through safeStorage and keeps them across restart", asyn
   try {
     const first = await launchAt(root);
     const firstPage = first.page;
+    await expect(firstPage.locator("#ai-status")).not.toContainText("正在检查", {
+      timeout: 30000
+    });
     await firstPage.locator("#ai-status").click();
-    await expect(firstPage.locator("#ai-settings-dialog")).toBeVisible();
+    await expect(firstPage.locator("#settings-dialog")).toBeVisible();
     await firstPage.locator("#ai-settings-provider").selectOption("openai");
     await firstPage.locator("#ai-settings-key").fill("saved-secret-key");
     await firstPage.locator("#ai-settings-save").click();
-    await expect(firstPage.locator("#ai-settings-dialog")).not.toBeVisible();
+    await expect(firstPage.locator("#settings-dialog")).not.toBeVisible();
     await firstPage.locator("#ai-status").click();
     await expect(firstPage.locator("#ai-settings-key-hint")).toContainText("已配置");
     await firstPage.locator("#ai-settings-cancel").click();
@@ -267,6 +271,9 @@ test("uses AI_API_KEY from the environment for the current session only", async 
     expect(settings.hasApiKey).toBe(true);
     expect(JSON.stringify(settings)).not.toContain("env-session-key");
 
+    await expect(page.locator("#ai-status")).not.toContainText("正在检查", {
+      timeout: 30000
+    });
     await page.locator("#ai-status").click();
     await expect(page.locator("#ai-settings-env")).toBeVisible();
     await expect(page.locator("#ai-settings-env-text")).toContainText("环境变量");
@@ -282,8 +289,9 @@ test("exposes an in-app uninstall entry that stays safe in dev mode", async ({
 }) => {
   const { page } = desktopApp;
   await page.locator("#sidebar-more > summary").click();
-  await page.locator("#desktop-about-open").click();
-  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
   const uninstallButton = page.locator("#desktop-uninstall");
   await expect(uninstallButton).toBeVisible();
   await uninstallButton.click();
@@ -297,7 +305,8 @@ test("explains that updates are disabled before a feed is configured", async ({
 }) => {
   const { page } = desktopApp;
   await page.locator("#sidebar-more > summary").click();
-  await page.locator("#desktop-about-open").click();
+  await page.locator("#sidebar-settings-open").click();
+  await page.locator('[data-settings-tab="about"]').click();
   await page.locator("#desktop-check-updates").click();
   await expect(page.locator("#desktop-update-state")).toContainText(
     "更新未启用"
@@ -357,7 +366,7 @@ test("keeps the RSS article AI panel floating with a visible launcher", async ({
   expect(collapsed).toBe(true);
 });
 
-test("opens the desktop about dialog from the RSS article menu", async ({
+test("opens the unified settings dialog from the RSS article menu", async ({
   desktopApp
 }) => {
   const { page } = desktopApp;
@@ -367,10 +376,11 @@ test("opens the desktop about dialog from the RSS article menu", async ({
     document.querySelector(".rss-article-bar").hidden = false;
   });
   await page.locator(".rss-article-more > summary").click();
-  await page.locator("#rss-open-desktop-about").click();
-  await expect(page.locator("#desktop-about-dialog")).toBeVisible();
+  await page.locator("#rss-open-settings").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
-  await page.locator("#desktop-about-cancel").click();
+  await page.locator("#settings-close").click();
 });
 
 test("keeps the AI panel inside a small restored window", async ({

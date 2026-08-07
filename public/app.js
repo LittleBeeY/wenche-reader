@@ -41,6 +41,11 @@ import {
   savePanelState
 } from "./panelState.js";
 import {
+  closeSettings,
+  initSettingsHub,
+  openSettings
+} from "./settingsHub.js";
+import {
   createDocxPreview,
   isDocxDocument,
   measureDocxPages,
@@ -138,7 +143,6 @@ const nextPageButton = document.querySelector("#next-page");
 const pageIndicator = document.querySelector("#page-indicator");
 const aiStatus = document.querySelector("#ai-status");
 const rssAiStatus = document.querySelector("#rss-ai-status");
-const aiSettingsDialog = document.querySelector("#ai-settings-dialog");
 const aiSettingsProvider = document.querySelector("#ai-settings-provider");
 const aiSettingsProviderHint = document.querySelector("#ai-settings-provider-hint");
 const aiSettingsKey = document.querySelector("#ai-settings-key");
@@ -323,6 +327,16 @@ fileInput.addEventListener("change", async (event) => {
   await uploadFiles(files);
   fileInput.value = "";
 });
+
+document
+  .querySelector("#sidebar-settings-open")
+  ?.addEventListener("click", () => openSettings("data"));
+document
+  .querySelector("#rss-open-settings")
+  ?.addEventListener("click", () => {
+    document.querySelector(".rss-article-more")?.removeAttribute("open");
+    openSettings("rss");
+  });
 
 reader.addEventListener("mouseup", () => {
   setTimeout(captureSelection, 0);
@@ -651,6 +665,7 @@ nextPageButton.addEventListener("click", async () => {
 renderPanelState();
 applyReadingSettings();
 showAiView("analysis");
+initSettingsHub();
 await loadAiStatus();
 await loadDocumentList();
 const lastDocumentId = getLastDocumentId(window.localStorage);
@@ -1140,7 +1155,7 @@ async function openAiSettingsDialog() {
       if (settings.baseUrl) aiSettingsBase.value = settings.baseUrl;
       if (settings.model) aiSettingsModel.value = settings.model;
     }
-    aiSettingsDialog.showModal();
+    openSettings("ai");
   } catch (error) {
     aiStatus.classList.add("is-warning");
     aiStatus.textContent = `AI 设置加载失败：${error.message}`;
@@ -1244,7 +1259,7 @@ async function saveAiSettings() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
     }));
-    aiSettingsDialog.close();
+    closeSettings();
     await loadAiStatus();
     setStatus(`AI 接口已切换为 ${result.provider}${result.configured ? `（${result.model}）` : "，但配置不完整"}`);
   } catch (error) {
@@ -1290,7 +1305,7 @@ aiStatus.addEventListener("keydown", (event) => {
 });
 rssAiStatus?.addEventListener("click", openAiSettingsDialog);
 aiSettingsProvider.addEventListener("change", () => applyProviderDefaults(aiSettingsProvider.value));
-aiSettingsCancel.addEventListener("click", () => aiSettingsDialog.close());
+aiSettingsCancel.addEventListener("click", closeSettings);
 aiSettingsTest.addEventListener("click", testAiConnection);
 aiSettingsSave.addEventListener("click", saveAiSettings);
 aiSettingsUseEnv?.addEventListener("click", useEnvAiKey);
@@ -1302,7 +1317,7 @@ aiSettingsClearKey.addEventListener("click", () => {
 });
 // method="dialog" 的表单在输入框按 Enter 会直接关闭对话框而不保存，
 // 这里把 Enter 语义改为「保存」，避免用户以为已保存。
-aiSettingsDialog.querySelector("form").addEventListener("submit", (event) => {
+document.querySelector("#ai-settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
   saveAiSettings();
 });

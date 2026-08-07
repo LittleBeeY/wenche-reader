@@ -409,7 +409,7 @@ API 转发必须保持 Response 流，不调用 `.text()`、`.json()`、`.arrayB
 - 参数做类型和长度校验；
 - main 每个 handler 验证 `senderFrame` 是 `app://wenche` 主 frame。
 
-业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；`getAiEnvState`/`applyEnvAiConfig` 只向 AI 设置对话框提供「环境变量 Key 可用/正在使用」的状态与一次性应用入口，不传输 Key 本身；`uninstallApp` 只用于「关于与更新」对话框的卸载入口。该对话框同时从本地文档侧栏与 RSS 文章「更多」菜单打开，使同一前端仍能由普通浏览器运行。
+业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；`getAiEnvState`/`applyEnvAiConfig` 只向统一设置对话框的 AI 区段提供「环境变量 Key 可用/正在使用」的状态与一次性应用入口，不传输 Key 本身；`uninstallApp` 只用于统一设置对话框「关于与更新」区段的卸载入口。统一设置对话框由 `public/settingsHub.js` 承载，本地文档侧栏「设置」、RSS 页脚「设置」、RSS 文章「更多」菜单与 AI 状态栏都打开同一实例，使同一前端仍能由普通浏览器运行。
 
 ## 13. `desktop/main.js`
 
