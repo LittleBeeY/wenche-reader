@@ -275,6 +275,7 @@
                   <button id="desktop-check-updates" type="button">检查更新</button>
                   <button id="desktop-install-update" type="button" hidden>重启并安装</button>
                   <button id="desktop-open-logs" type="button">打开日志目录</button>
+                  <button id="desktop-uninstall" type="button">卸载应用</button>
                 </div>
               </div>
             </details>
@@ -760,6 +761,10 @@
           <input id="ai-settings-key" type="password" autocomplete="off" placeholder="sk-…" />
           <button id="ai-settings-clear-key" type="button" class="ai-settings-clear-key" hidden>清除已保存的 Key</button>
         </label>
+        <div id="ai-settings-env" class="ai-settings-env" hidden>
+          <p id="ai-settings-env-text"></p>
+          <button id="ai-settings-use-env" type="button">使用环境变量 Key</button>
+        </div>
         <label class="ai-settings-field" for="ai-settings-base">
           <span>API 根地址（预设已带默认值，可留空）</span>
           <input id="ai-settings-base" type="text" autocomplete="off" />

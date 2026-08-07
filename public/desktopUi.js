@@ -12,6 +12,7 @@
   const checkButton = document.getElementById("desktop-check-updates");
   const installButton = document.getElementById("desktop-install-update");
   const logsButton = document.getElementById("desktop-open-logs");
+  const uninstallButton = document.getElementById("desktop-uninstall");
 
   const STATE_LABELS = {
     disabled: "更新未启用",
@@ -46,4 +47,19 @@
   });
   installButton?.addEventListener("click", () => void api.restartToInstallUpdate());
   logsButton?.addEventListener("click", () => void api.openLogDirectory());
+  uninstallButton?.addEventListener("click", async () => {
+    if (!uninstallButton || uninstallButton.disabled) return;
+    uninstallButton.disabled = true;
+    if (stateElement) stateElement.textContent = "正在启动卸载…";
+    const result = await api.uninstallApp();
+    if (!result?.accepted && stateElement) {
+      uninstallButton.disabled = false;
+      stateElement.textContent =
+        result?.error === "dev-mode"
+          ? "开发模式不支持应用内卸载"
+          : result?.error === "update-exe-missing"
+            ? "未找到卸载程序（Update.exe）"
+            : "已取消卸载";
+    }
+  });
 })();

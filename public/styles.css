@@ -2359,6 +2359,31 @@ select:focus-visible {
   line-height: 1.5;
 }
 
+.ai-settings-env {
+  align-items: center;
+  background: var(--surface-muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.ai-settings-env p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-settings-env button {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
 .ai-settings-clear-key {
   align-self: flex-start;
   background: none;
@@ -4755,7 +4780,7 @@ select:focus-visible {
   border-radius: 16px;
   bottom: auto;
   box-shadow: var(--shadow-lift);
-  height: var(--ai-panel-height, min(600px, calc(100dvh - 32px)));
+  height: var(--ai-panel-height, min(600px, calc(100dvh - 128px)));
   left: var(--ai-panel-left, auto);
   min-height: 0;
   position: fixed;

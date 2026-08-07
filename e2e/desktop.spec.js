@@ -10,7 +10,7 @@ const projectRoot = path.resolve(
   ".."
 );
 
-function launchOptions(root) {
+function launchOptions(root, extraEnv = {}) {
   return {
     args: [projectRoot, "--no-sandbox"],
     cwd: projectRoot,
@@ -18,13 +18,14 @@ function launchOptions(root) {
     env: {
       ...process.env,
       WENCHE_DESKTOP_DATA_ROOT: root,
-      NODE_ENV: "test"
+      NODE_ENV: "test",
+      ...extraEnv
     }
   };
 }
 
-async function launchAt(root) {
-  const app = await electron.launch(launchOptions(root));
+async function launchAt(root, extraEnv = {}) {
+  const app = await electron.launch(launchOptions(root, extraEnv));
   app.process().stdout?.on("data", (chunk) => {
     console.log(`[desktop-main] ${String(chunk).trim()}`);
   });
@@ -211,6 +212,108 @@ test("single instance lock focuses the existing window", async ({
     });
   });
   expect(await app.windows()).toHaveLength(1);
+});
+
+test("saves AI settings through safeStorage and keeps them across restart", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "wenche-desktop-e2e-"));
+  try {
+    const first = await launchAt(root);
+    const firstPage = first.page;
+    await firstPage.locator("#ai-status").click();
+    await expect(firstPage.locator("#ai-settings-dialog")).toBeVisible();
+    await firstPage.locator("#ai-settings-provider").selectOption("openai");
+    await firstPage.locator("#ai-settings-key").fill("saved-secret-key");
+    await firstPage.locator("#ai-settings-save").click();
+    await expect(firstPage.locator("#ai-settings-dialog")).not.toBeVisible();
+    await firstPage.locator("#ai-status").click();
+    await expect(firstPage.locator("#ai-settings-key-hint")).toContainText("已配置");
+    await firstPage.locator("#ai-settings-cancel").click();
+    await first.app.close();
+
+    const second = await launchAt(root);
+    const settings = await second.page.evaluate(async () => {
+      const response = await fetch("/api/ai/settings");
+      return response.json();
+    });
+    expect(settings.provider).toBe("openai");
+    expect(settings.hasApiKey).toBe(true);
+    expect(JSON.stringify(settings)).not.toContain("saved-secret-key");
+    await second.app.close();
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("uses AI_API_KEY from the environment for the current session only", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "wenche-desktop-e2e-"));
+  try {
+    const launched = await launchAt(root, {
+      AI_API_KEY: "env-session-key",
+      AI_PROVIDER: "openai",
+      AI_MODEL: "gpt-4.1-mini"
+    });
+    const { page } = launched;
+    const envState = await page.evaluate(() => window.wencheDesktop.getAiEnvState());
+    expect(envState).toEqual({ available: true, inUse: true });
+
+    const settings = await page.evaluate(async () => {
+      const response = await fetch("/api/ai/settings");
+      return response.json();
+    });
+    expect(settings.provider).toBe("openai");
+    expect(settings.hasApiKey).toBe(true);
+    expect(JSON.stringify(settings)).not.toContain("env-session-key");
+
+    await page.locator("#ai-status").click();
+    await expect(page.locator("#ai-settings-env")).toBeVisible();
+    await expect(page.locator("#ai-settings-env-text")).toContainText("环境变量");
+    await page.locator("#ai-settings-cancel").click();
+    await launched.app.close();
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("exposes an in-app uninstall entry that stays safe in dev mode", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#desktop-about > summary").click();
+  const uninstallButton = page.locator("#desktop-uninstall");
+  await expect(uninstallButton).toBeVisible();
+  await uninstallButton.click();
+  await expect(page.locator("#desktop-update-state")).toContainText(
+    "开发模式不支持应用内卸载"
+  );
+});
+
+test("keeps the AI panel inside a small restored window", async ({
+  desktopApp
+}) => {
+  const { app, page } = desktopApp;
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setMinimumSize(400, 300);
+    win.setSize(900, 560);
+    win.setPosition(0, 0);
+  });
+  await page.waitForTimeout(500);
+  const bounds = await page.evaluate(() => {
+    const rect = document.querySelector("#ai-panel").getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    };
+  });
+  expect(bounds.top).toBeGreaterThanOrEqual(0);
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
 });
 
 test("denies popups and permission requests", async ({ desktopApp }) => {

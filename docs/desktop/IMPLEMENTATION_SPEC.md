@@ -313,6 +313,8 @@ repository.getPublicState()
 
 { type: "settings-write-result", requestId, ok, config?, errorCode? }
 
+{ type: "settings-apply", config }
+
 { type: "shutdown-request" }
 ```
 
@@ -331,6 +333,8 @@ repository.getPublicState()
 { type: "backend-start-error", code }
 
 { type: "settings-write", requestId, config }
+
+{ type: "settings-applied" }
 
 { type: "shutdown-complete" }
 ```
@@ -389,6 +393,9 @@ API 转发必须保持 Response 流，不调用 `.text()`、`.json()`、`.arrayB
   checkForUpdates(): Promise<{ accepted: boolean }>,
   restartToInstallUpdate(): Promise<{ accepted: boolean }>,
   openLogDirectory(): Promise<{ accepted: boolean }>,
+  getAiEnvState(): Promise<{ available: boolean, inUse: boolean }>,
+  applyEnvAiConfig(): Promise<{ accepted: boolean }>,
+  uninstallApp(): Promise<{ accepted: boolean, cancelled?: boolean, error?: "dev-mode" | "update-exe-missing" }>,
   onUpdateState(callback): () => void
 }
 ```
@@ -402,7 +409,7 @@ API 转发必须保持 Response 流，不调用 `.text()`、`.json()`、`.arrayB
 - 参数做类型和长度校验；
 - main 每个 handler 验证 `senderFrame` 是 `app://wenche` 主 frame。
 
-业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；它只用于桌面关于信息、更新状态和故障入口，使同一前端仍能由普通浏览器运行。
+业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；`getAiEnvState`/`applyEnvAiConfig` 只向 AI 设置对话框提供「环境变量 Key 可用/正在使用」的状态与一次性应用入口，不传输 Key 本身；`uninstallApp` 只用于关于面板的卸载入口。其余能力仅覆盖桌面关于信息、更新状态和故障入口，使同一前端仍能由普通浏览器运行。
 
 ## 13. `desktop/main.js`
 

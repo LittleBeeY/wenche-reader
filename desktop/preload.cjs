@@ -10,6 +10,9 @@ const api = {
   restartToInstallUpdate: () => invoke("wenche:restart-to-install-update"),
   restartApp: () => invoke("wenche:restart-app"),
   openLogDirectory: () => invoke("wenche:open-log-directory"),
+  getAiEnvState: () => invoke("wenche:get-ai-env-state"),
+  applyEnvAiConfig: () => invoke("wenche:apply-env-ai-config"),
+  uninstallApp: () => invoke("wenche:uninstall-app"),
   onUpdateState: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, state) => callback(state);

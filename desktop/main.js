@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -27,6 +28,11 @@ import {
   installAppProtocol,
   registerAppScheme
 } from "./protocol.js";
+import {
+  envKeyInUse,
+  mergeEnvAiConfig,
+  readEnvAiConfig
+} from "./envAiConfig.js";
 import { DesktopSettingsRepository } from "./settingsRepository.js";
 import { createUpdater } from "./updater.js";
 
@@ -103,6 +109,9 @@ let sessionToken = "";
 let settingsRepository = null;
 let updater = null;
 let protocolUninstall = null;
+let envAiConfig = null;
+let envAiKeyInUse = false;
+let envApplyPending = null;
 let updatePending = false;
 let quitInitiated = false;
 let shutdownStarted = false;
@@ -176,6 +185,8 @@ async function initializeDesktop() {
 
   sessionToken = randomBytes(32).toString("base64url");
   const settings = await settingsRepository.read();
+  envAiConfig = readEnvAiConfig();
+  envAiKeyInUse = envKeyInUse(settings, envAiConfig);
   if (settings.keyUnavailable) {
     logger("warn", "ai key unavailable; starting unconfigured");
   }
@@ -210,13 +221,7 @@ async function initializeDesktop() {
     rssImageCacheDir: dirs.rssImages,
     staticRoot: path.join(app.getAppPath(), "public"),
     desktopSessionToken: sessionToken,
-    initialAiConfig: {
-      provider: settings.provider,
-      apiKey: settings.apiKey,
-      baseUrl: settings.baseUrl,
-      model: settings.model,
-      keyUnavailable: settings.keyUnavailable
-    }
+    initialAiConfig: mergeEnvAiConfig(settings, envAiConfig)
   });
 
   setTimeout(() => {
@@ -252,6 +257,15 @@ async function handleWorkerMessage(message, statePath) {
     });
   } else if (message.type === "backend-start-error") {
     await showBackendError(message.code || "backend-start-error");
+  } else if (message.type === "settings-write") {
+    void persistAiSettings(message);
+  } else if (message.type === "settings-applied") {
+    if (envApplyPending) {
+      const pending = envApplyPending;
+      envApplyPending = null;
+      envAiKeyInUse = true;
+      pending.resolve(true);
+    }
   }
 }
 
@@ -367,6 +381,109 @@ function registerIpcHandlers() {
     const error = await shell.openPath(dirs.logs);
     return { accepted: error === "" };
   });
+  ipcMain.handle("wenche:get-ai-env-state", (event) => {
+    if (!isTrustedSender(event)) return { available: false, inUse: false };
+    return {
+      available: Boolean(envAiConfig?.available),
+      inUse: envAiKeyInUse
+    };
+  });
+  ipcMain.handle("wenche:apply-env-ai-config", (event) => {
+    if (!isTrustedSender(event)) return { accepted: false };
+    if (!envAiConfig?.available || envAiKeyInUse || !worker) {
+      return { accepted: false };
+    }
+    return applyEnvAiConfig();
+  });
+  ipcMain.handle("wenche:uninstall-app", async (event) => {
+    if (!isTrustedSender(event)) return { accepted: false };
+    if (!app.isPackaged) return { accepted: false, error: "dev-mode" };
+    const updateExe = resolveSquirrelUninstaller(process.execPath);
+    if (!updateExe || !existsSync(updateExe)) {
+      return { accepted: false, error: "update-exe-missing" };
+    }
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      buttons: ["取消", "卸载"],
+      defaultId: 0,
+      cancelId: 0,
+      title: "卸载文澈阅读",
+      message: "确定要卸载文澈阅读吗？",
+      detail:
+        "卸载将删除程序文件与开始菜单快捷方式。\n" +
+        "你的阅读数据（文档、订阅、AI 记录等）保存在独立的本地数据目录中，不会被删除。"
+    });
+    if (choice.response !== 1) return { accepted: false, cancelled: true };
+    const child = spawn(updateExe, ["--uninstall"], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
+    });
+    child.unref();
+    setTimeout(() => app.quit(), 300);
+    return { accepted: true };
+  });
+}
+
+function applyEnvAiConfig() {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      envApplyPending = null;
+      resolve({ accepted: false, error: "timeout" });
+    }, 3000);
+    envApplyPending = {
+      resolve: (ok) => {
+        clearTimeout(timer);
+        resolve({ accepted: ok });
+      }
+    };
+    worker.postMessage({ type: "settings-apply", config: envAiConfig.config });
+  });
+}
+
+async function persistAiSettings({ requestId, config }) {
+  try {
+    const saved = await settingsRepository.write({
+      provider: String(config?.provider || "mock"),
+      apiKey: String(config?.apiKey || ""),
+      baseUrl: String(config?.baseUrl || ""),
+      model: String(config?.model || ""),
+      clearKey: config?.clearKey === true
+    });
+    envAiKeyInUse = envKeyInUse(saved, envAiConfig);
+    worker.postMessage({
+      type: "settings-write-result",
+      requestId,
+      ok: true,
+      config: {
+        provider: saved.provider,
+        apiKey: saved.apiKey,
+        baseUrl: saved.baseUrl,
+        model: saved.model
+      }
+    });
+  } catch (error) {
+    logger("error", `ai settings write failed: ${error.code || error.message}`);
+    worker.postMessage({
+      type: "settings-write-result",
+      requestId,
+      ok: false,
+      errorCode:
+        error?.message === "encryption-unavailable"
+          ? "encryption-unavailable"
+          : "settings-write-failed"
+    });
+  }
+}
+
+function resolveSquirrelUninstaller(execPath) {
+  // Squirrel 启动器 stub 与版本化 exe 都可能成为 process.execPath：
+  // 兼容两者（...\wenche_reader\WencheReader.exe 与 ...\app-1.1.0\WencheReader.exe）。
+  const candidates = [
+    path.resolve(path.dirname(execPath), "Update.exe"),
+    path.resolve(path.dirname(execPath), "..", "Update.exe")
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
 }
 
 function isTrustedSender(event) {

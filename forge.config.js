@@ -9,6 +9,10 @@ export default {
     asar: true,
     name: "WencheReader",
     executableName: "WencheReader",
+    win32metadata: {
+      ProductName: "文澈阅读",
+      FileDescription: "文澈阅读：本地优先的 AI 深度阅读器"
+    },
     icon: iconPath,
     out: process.env.WENCHE_FORGE_OUT || "out",
     ignore: [
@@ -38,6 +42,7 @@ export default {
       name: "@electron-forge/maker-squirrel",
       config: {
         name: "wenche_reader",
+        title: "文澈阅读",
         setupExe: "WencheReader-Setup.exe",
         setupIcon: `${iconPath}.ico`,
         // 正式发布必须设置 WENCHE_ICON_URL 为公开 HTTPS 的品牌图标地址；

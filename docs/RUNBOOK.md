@@ -39,11 +39,14 @@ scripts\open-reader.cmd
 ## 桌面版安装与使用
 
 - 运行 `npm.cmd run desktop:make` 生成 `out/make/squirrel.windows/x64/` 下的 `WencheReader-Setup.exe`；桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
+- 本地构建若仓库路径含非 ASCII 字符（如 `D:\项目\...`），`electron-winstaller` 的 `rcedit` 可能报 `Unable to load file`；此时设置 `WENCHE_FORGE_OUT` 指向纯 ASCII 临时目录（如 `C:\Users\<用户>\AppData\Local\Temp\wenche-out`）再执行 `npm.cmd run desktop:make`，产物检查同样传入该变量。
+- 安装位置固定为 `%LOCALAPPDATA%\wenche_reader`（Squirrel 按包 ID 决定用户级安装目录，不支持自定义安装位置）；如需可选安装目录只能换 NSIS/MSIX 安装器，并会失去 Squirrel 自动更新能力。
 - 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
-- 安装/卸载/快捷方式显示名为 `WencheReader`（Squirrel 使用可执行文件名生成），卸载入口在「设置 → 应用」或 `Update.exe --uninstall`；Web/CLI 数据迁移到桌面版使用 V2 备份导出/恢复，桌面版不会自动读取仓库数据目录。
+- 安装/卸载/开始菜单快捷方式显示名为「文澈阅读」；可执行文件与包 ID 保持英文 `WencheReader.exe`/`wenche_reader`。卸载入口在侧栏「更多 → 关于与更新 → 卸载应用」或 `Update.exe --uninstall`；Web/CLI 数据迁移到桌面版使用 V2 备份导出/恢复，桌面版不会自动读取仓库数据目录。
 - 更新：侧栏「更多 → 关于与更新」。仅打包版且配置 `WENCHE_UPDATE_BASE_URL` 后启用，频道由 `config/settings.json` 的 `updates.channel` 决定（`stable`/`beta`）。
 - 首次启动会在版本变更时自动把 `data/reader.sqlite` 备份到 `backups/pre-upgrade-*.sqlite`（保留最近 3 份）；存在 `reader.sqlite-wal`/`reader.sqlite-shm` 时会拒绝启动并显示错误页。
 - AI Key 保存在 `secrets/ai-key.bin`（safeStorage 加密），不再写入 `.env`；升级后 Key 仍可用但页面不回显。
+- 若启动前已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会作为当前会话的 Key 自动使用、不落盘；AI 设置对话框会显示来源并可随时改用保存的 Key。修改环境变量后需重启应用生效。
 - 排障：清空 `cache/` 不会丢数据；`data/`、`uploads/`、`config/`、`secrets/`、`backups/` 不要手动删除；卸载不会删除 `%LOCALAPPDATA%\Wenche Reader`。
 
 ## 配置 AI 接口（应用内）

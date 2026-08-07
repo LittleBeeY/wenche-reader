@@ -177,10 +177,22 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 - 两文件写入任一失败时，worker 保持旧 provider。main 应尽力恢复旧配置文件，不能回报成功；
 - 任何日志只记录 `hasApiKey: true/false`，不记录长度、前缀或哈希。
 
+### 6.4 环境变量 Key（仅当前会话）
+
+桌面版支持把启动进程环境中的 `AI_API_KEY` 作为「未保存 Key」的只读回退：
+
+- main 启动时读取 `AI_API_KEY`，可选 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL` 一起生效；未写 `AI_PROVIDER` 时默认 `openai`，非法值回退到 `openai`；
+- 没有已保存 Key 时自动作为当前会话配置；已有保存 Key 时以保存值为准，用户仍可在设置对话框显式选择应用环境变量 Key；
+- Key 只存在于 main/worker 内存与 bootstrap/apply 消息中，绝不写入 `settings.json`、`secrets/`、SQLite、日志、备份或 `.env`；
+- renderer 只能通过 IPC 得知 `available`/`inUse` 两个布尔值，不能读取 Key 本身；
+- 修改环境变量后必须重启应用才生效；桌面版不扫描仓库或任意目录的 `.env`，也不把调用者环境变量视为可信数据源之外的能力；
+- 与 Web/CLI 版的 `.env` 一样，这是用户主动提供的配置输入；应用不负责验证其来源，只保证不落盘、不回显。
+
 ## 7. Main/worker 秘密边界
 
 允许 Key 出现的位置：
 
+- 启动进程环境变量中用户主动设置的 `AI_API_KEY`/`AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`（只读输入，不写回）；
 - AI 设置 POST 的 renderer 请求内存；
 - utility process 当前配置内存；
 - main/worker 之间的结构化克隆消息内存；
@@ -189,11 +201,12 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 
 禁止 Key 出现的位置：
 
-- argv、环境变量和进程标题；
+- argv 和进程标题；
 - URL、query、Cookie、localStorage、sessionStorage 和 IndexedDB；
 - GET API、健康接口和错误响应；
 - SQLite、备份、Markdown 导出；
 - `settings.json`、`runtime-state.json`；
+- 应用回写或修改后的环境变量与 `.env`（Web/CLI 的 `.env` 写入只由 `EnvAiSettingsStore` 管理，桌面版不调用）；
 - main/worker stdout、日志和诊断报告；
 - GitHub Actions 日志、安装器和更新元数据。
 
@@ -315,6 +328,16 @@ DOCX、HTML、Markdown、模型输出和 RSS 内容继续走项目现有清洗�
 ## 13. 清除与卸载
 
 Squirrel 卸载默认只移除程序，不删除 LocalAppData。首版不在卸载器中加入递归删除用户数据。
+
+「关于与更新」提供应用内「卸载应用」按钮：
+
+- 只读定位安装根目录下的 `Update.exe`（兼容 Squirrel 根 stub 与 `app-<version>/` 两种 `process.execPath`）；
+- 弹出系统确认框，明确提示阅读数据保留在本地数据目录；
+- 确认后以分离进程执行 `Update.exe --uninstall`，随后应用退出；不传任何用户参数；
+- 开发模式（`!app.isPackaged`）拒绝执行，避免误卸源码目录；
+- 找不到 `Update.exe` 时只返回稳定错误码，不猜测路径、不递归删除。
+
+卸载完成后 `%LOCALAPPDATA%\Wenche Reader` 数据目录保留；是否提供「删除全部本地数据」是单独需求，见下。
 
 若 UI 提供“删除全部本地数据”，必须是单独需求和独立设计：需要二次确认、先关闭 worker、解析并显示精确目标根，并优先移动到回收站。它不属于本桌面化实现合同，agent 不得顺手加入。
 

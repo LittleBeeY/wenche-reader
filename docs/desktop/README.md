@@ -24,6 +24,7 @@
 | 首发平台 | Windows 10/11 x64；不同时实现 macOS、Linux、ARM64 |
 | 桌面运行时 | Electron 43 的最新非预发布补丁版，写入 `package.json` 时使用精确版本，不使用 `^` 或 `~` |
 | 打包工具 | Electron Forge，Squirrel.Windows 安装器 |
+| 安装位置 | Squirrel 固定安装到 `%LOCALAPPDATA%\wenche_reader`，不提供可选安装目录；改用 NSIS/MSIX 会失去自动更新 |
 | 前端 | 继续使用 `public/` 原生 ES modules，不引入 React、Vue、Vite 或新的前端构建层 |
 | 后端 | 继续使用 Express、`node:sqlite`、现有 provider adapter 和 RSS 服务 |
 | 进程隔离 | Electron main 负责可信桌面能力；Express、SQLite 和 RSS 调度器运行在一个 utility process 中 |

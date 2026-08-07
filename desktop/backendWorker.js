@@ -22,6 +22,9 @@ parentPort.on("message", async (event) => {
       message.config,
       message.errorCode
     );
+  } else if (message.type === "settings-apply") {
+    store?.setSnapshot(message.config);
+    parentPort.postMessage({ type: "settings-applied" });
   } else if (message.type === "shutdown-request") {
     await shutdownBackend();
   }
