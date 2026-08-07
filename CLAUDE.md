@@ -39,7 +39,7 @@ npm.cmd run config:ai
 
 - 不要提交 `.env`、`data/`、`uploads/`、日志或 `node_modules/`。
 - 桌面版本地服务只监听 `127.0.0.1` 随机端口，所有 API 必须携带每次启动随机生成的会话令牌；main 只向自己的协议代理写入令牌。
-- AI Key 在桌面版只经 `safeStorage` 加密保存于 `%LOCALAPPDATA%\Wenche Reader\secrets`，不得写入 `.env`、SQLite、日志或备份。
+- AI Key 在桌面版只经 `safeStorage` 加密保存于 `%LOCALAPPDATA%\Wenche Reader\secrets`，不得写入 `.env`、SQLite、日志或备份；启动环境中的 `AI_API_KEY` 等只允许作为当前会话只读回退（不落盘、不回显），见 `docs/desktop/DATA_AND_SECURITY.md` §6.4。
 - SQLite 只能由 utility process 持有；main、renderer、preload 和更新器不得打开数据库。
 - 生产窗口必须保持 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`，并拒绝未授权的 window.open、导航与权限请求。
 - 新文件格式必须通过 `documentParser.js` 接入，并补解析与安全测试；不要在路由或前端另写解析器。
@@ -66,6 +66,8 @@ npm.cmd run config:ai
 | `HOST` | 监听地址，默认 `127.0.0.1` |
 
 AI 接口主要在应用内配置：点击 AI 面板顶部的状态栏打开设置对话框，读写 `/api/ai/settings`，保存后立即重建 provider 实例并同步给 RSS 服务，无需重启。`.env` 是这些设置的事实来源，手动修改后需重启。
+
+桌面版不读取仓库 `.env`；同名 `AI_API_KEY`/`AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL` 由启动环境提供时，仅用于当前会话且不落盘（见 `docs/desktop/DATA_AND_SECURITY.md` §6.4）。
 
 ## 文档
 
