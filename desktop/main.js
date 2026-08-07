@@ -393,7 +393,7 @@ function registerIpcHandlers() {
   });
   ipcMain.handle("wenche:apply-env-ai-config", (event) => {
     if (!isTrustedSender(event)) return { accepted: false };
-    if (!envAiConfig?.available || envAiKeyInUse || !worker) {
+    if (!envAiConfig?.available || envAiKeyInUse || envApplyPending || !worker) {
       return { accepted: false };
     }
     return applyEnvAiConfig();
@@ -421,6 +421,9 @@ function registerIpcHandlers() {
       detached: true,
       stdio: "ignore",
       windowsHide: true
+    });
+    child.on("error", (error) => {
+      logger("error", `uninstall launch failed: ${error.message}`);
     });
     child.unref();
     setTimeout(() => app.quit(), 300);

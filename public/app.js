@@ -1206,6 +1206,15 @@ async function useEnvAiKey() {
     }
     aiSettingsEnvInUse = true;
     aiSettingsHasKey = true;
+    // 环境变量配置可能带自己的 provider/baseUrl/model，应用后重新读取，
+    // 避免对话框仍显示旧的已保存配置。
+    const settings = await readJson(await fetch("/api/ai/settings"));
+    fillProviderSelect(settings.provider);
+    applyProviderDefaults(settings.provider);
+    if (settings.provider !== "mock") {
+      if (settings.baseUrl) aiSettingsBase.value = settings.baseUrl;
+      if (settings.model) aiSettingsModel.value = settings.model;
+    }
     renderAiSettingsEnv({ available: true, inUse: true });
     aiSettingsKeyHint.textContent = "已配置（环境变量，留空保持不变）";
     aiSettingsClearKey.hidden = true;

@@ -8,8 +8,8 @@
 
   const sidebarOpenButton = document.getElementById("desktop-about-open");
   const rssOpenButton = document.getElementById("rss-open-desktop-about");
-  sidebarOpenButton.hidden = false;
-  rssOpenButton.hidden = false;
+  if (sidebarOpenButton) sidebarOpenButton.hidden = false;
+  if (rssOpenButton) rssOpenButton.hidden = false;
 
   const versionElement = document.getElementById("desktop-version");
   const stateElement = document.getElementById("desktop-update-state");
