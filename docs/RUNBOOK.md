@@ -42,6 +42,7 @@ scripts\open-reader.cmd
 - 本地构建若仓库路径含非 ASCII 字符（如 `D:\项目\...`），`electron-winstaller` 的 `rcedit` 可能报 `Unable to load file`；此时设置 `WENCHE_FORGE_OUT` 指向纯 ASCII 临时目录（如 `C:\Users\<用户>\AppData\Local\Temp\wenche-out`）再执行 `npm.cmd run desktop:make`，产物检查同样传入该变量。
 - 安装位置固定为 `%LOCALAPPDATA%\wenche_reader`（Squirrel 按包 ID 决定用户级安装目录，不支持自定义安装位置）；如需可选安装目录只能换 NSIS/MSIX 安装器，并会失去 Squirrel 自动更新能力。
 - 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
+- 「设置 → 数据」可查看各目录占用并一键清理资讯图片缓存/浏览缓存；「更改位置」可把数据根（data/uploads/cache/backups）迁移到其他磁盘，迁移后应用自动重启，`config/secrets/logs/session` 留在引导根。
 - 安装/卸载/开始菜单快捷方式显示名为「文澈阅读」；可执行文件与包 ID 保持英文 `WencheReader.exe`/`wenche_reader`。卸载入口在统一「设置」对话框的「关于与更新」区段（本地侧栏「更多 → 设置」、RSS 页脚或 RSS 文章「更多」菜单均可打开），也可直接 `Update.exe --uninstall`；Web/CLI 数据迁移到桌面版使用 V2 备份导出/恢复，桌面版不会自动读取仓库数据目录。
 - 更新：侧栏「更多 → 关于与更新」。仅打包版且配置 `WENCHE_UPDATE_BASE_URL` 后启用，频道由 `config/settings.json` 的 `updates.channel` 决定（`stable`/`beta`）。
 - 首次启动会在版本变更时自动把 `data/reader.sqlite` 备份到 `backups/pre-upgrade-*.sqlite`（保留最近 3 份）；存在 `reader.sqlite-wal`/`reader.sqlite-shm` 时会拒绝启动并显示错误页。

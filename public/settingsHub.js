@@ -50,4 +50,9 @@ function activate(section) {
     const section = document.querySelector(`#settings-section-${name}`);
     if (section) section.hidden = !active;
   }
+  dialog?.dispatchEvent(
+    new CustomEvent("wenche:settings-section", {
+      detail: { section: visibleTab }
+    })
+  );
 }

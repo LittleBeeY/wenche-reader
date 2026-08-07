@@ -783,6 +783,22 @@
           <label class="restore-button" for="restore-backup">从备份恢复</label>
           <input id="restore-backup" type="file" accept="application/json,.json" />
         </div>
+        <div id="storage-usage" class="storage-usage desktop-only" hidden>
+          <h3>存储占用</h3>
+          <div id="storage-usage-rows" class="storage-usage-rows"></div>
+          <div id="storage-usage-total" class="storage-usage-total"></div>
+          <div class="storage-usage-actions">
+            <button id="storage-refresh" type="button">刷新</button>
+            <button id="storage-clean-rss-images" type="button">清理资讯图片缓存</button>
+            <button id="storage-clean-session" type="button">清理浏览缓存</button>
+          </div>
+        </div>
+        <div id="data-location" class="data-location desktop-only" hidden>
+          <h3>数据存储位置</h3>
+          <p id="data-location-path" class="data-location-path"></p>
+          <button id="data-location-change" type="button">更改位置…</button>
+          <p id="data-location-status" class="data-location-status" role="status"></p>
+        </div>
       </section>
 
       <section id="settings-section-about" class="settings-section" role="tabpanel" aria-label="关于与更新" hidden>

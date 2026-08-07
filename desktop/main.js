@@ -4,12 +4,21 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
   statSync
 } from "node:fs";
-import { copyFile, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  cp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -58,7 +67,9 @@ if (!app.isPackaged) {
   app.commandLine.appendSwitch("no-sandbox");
 }
 
-function resolveDataRoot() {
+const DATA_LOCATION_FILE = "data-location.json";
+
+function resolveBootstrapRoot() {
   if (!app.isPackaged && process.env.WENCHE_DESKTOP_DATA_ROOT) {
     const root = path.resolve(process.env.WENCHE_DESKTOP_DATA_ROOT);
     if (!path.isAbsolute(root)) throw new Error("invalid-data-root");
@@ -71,9 +82,25 @@ function resolveDataRoot() {
   return path.join(localAppData, "Wenche Reader");
 }
 
+function resolveDataRoot(bootstrapRoot) {
+  const pointerPath = path.join(bootstrapRoot, DATA_LOCATION_FILE);
+  try {
+    const pointer = JSON.parse(readFileSync(pointerPath, "utf8"));
+    if (pointer?.root && path.isAbsolute(pointer.root)) {
+      return pointer.root;
+    }
+  } catch {
+    // 无指针或指针损坏时退回引导根，保持默认布局。
+  }
+  return bootstrapRoot;
+}
+
+let bootstrapRoot;
 let dataRoot;
 try {
-  dataRoot = resolveDataRoot();
+  bootstrapRoot = resolveBootstrapRoot();
+  dataRoot = resolveDataRoot(bootstrapRoot);
+  mkdirSync(bootstrapRoot, { recursive: true });
   mkdirSync(dataRoot, { recursive: true });
 } catch (error) {
   dialog.showErrorBox("文澈阅读", "无法创建数据目录，应用将退出。");
@@ -81,19 +108,19 @@ try {
   throw error;
 }
 
-app.setPath("userData", dataRoot);
-app.setPath("sessionData", path.join(dataRoot, "session"));
+app.setPath("userData", bootstrapRoot);
+app.setPath("sessionData", path.join(bootstrapRoot, "session"));
 app.setAppUserModelId(APP_ID);
 
 const dirs = {
   data: path.join(dataRoot, "data"),
   uploads: path.join(dataRoot, "uploads"),
   rssImages: path.join(dataRoot, "cache", "rss-images"),
-  config: path.join(dataRoot, "config"),
-  secrets: path.join(dataRoot, "secrets"),
   backups: path.join(dataRoot, "backups"),
-  logs: path.join(dataRoot, "logs"),
-  session: path.join(dataRoot, "session")
+  config: path.join(bootstrapRoot, "config"),
+  secrets: path.join(bootstrapRoot, "secrets"),
+  logs: path.join(bootstrapRoot, "logs"),
+  session: path.join(bootstrapRoot, "session")
 };
 for (const dir of Object.values(dirs)) {
   mkdirSync(dir, { recursive: true });
@@ -112,6 +139,7 @@ let protocolUninstall = null;
 let envAiConfig = null;
 let envAiKeyInUse = false;
 let envApplyPending = null;
+let relocatePending = null;
 let updatePending = false;
 let quitInitiated = false;
 let shutdownStarted = false;
@@ -265,6 +293,15 @@ async function handleWorkerMessage(message, statePath) {
       envApplyPending = null;
       envAiKeyInUse = true;
       pending.resolve(true);
+    }
+  } else if (
+    message.type === "relocate-prepared" ||
+    message.type === "relocate-failed"
+  ) {
+    if (relocatePending) {
+      const pending = relocatePending;
+      relocatePending = null;
+      pending.resolve(message);
     }
   }
 }
@@ -429,6 +466,53 @@ function registerIpcHandlers() {
     setTimeout(() => app.quit(), 300);
     return { accepted: true };
   });
+  ipcMain.handle("wenche:get-storage-info", (event) => {
+    if (!isTrustedSender(event)) return { ok: false };
+    const entries = [
+      { key: "data", label: "数据库（文档、标注、AI 记录）", path: dirs.data, cleanable: false },
+      { key: "uploads", label: "导入文件与资讯快照", path: dirs.uploads, cleanable: false },
+      { key: "rss-images", label: "资讯图片缓存", path: dirs.rssImages, cleanable: true },
+      { key: "backups", label: "升级前备份", path: dirs.backups, cleanable: false },
+      { key: "session", label: "浏览缓存", path: dirs.session, cleanable: true }
+    ].map((entry) => ({ ...entry, size: dirSizeSync(entry.path) }));
+    return {
+      ok: true,
+      root: dataRoot,
+      entries,
+      total: entries.reduce((sum, entry) => sum + entry.size, 0)
+    };
+  });
+  ipcMain.handle("wenche:clean-cache", async (event, target) => {
+    if (!isTrustedSender(event)) return { ok: false };
+    if (target === "rss-images") {
+      await clearDirContents(dirs.rssImages);
+      return { ok: true };
+    }
+    if (target === "session") {
+      if (desktopSession?.clearCache) await desktopSession.clearCache();
+      return { ok: true };
+    }
+    return { ok: false, error: "unknown-target" };
+  });
+  ipcMain.handle("wenche:relocate-data", async (event, requestedTarget) => {
+    if (!isTrustedSender(event)) return { ok: false, error: "unauthorized" };
+    let target =
+      typeof requestedTarget === "string" && requestedTarget.trim()
+        ? requestedTarget
+        : null;
+    if (!target) {
+      const picked = await dialog.showOpenDialog(mainWindow, {
+        title: "选择新的数据存储位置",
+        buttonLabel: "选择并迁移",
+        properties: ["openDirectory", "createDirectory"]
+      });
+      if (picked.canceled || !picked.filePaths?.[0]) {
+        return { ok: false, cancelled: true };
+      }
+      target = picked.filePaths[0];
+    }
+    return relocateDataRoot(target);
+  });
 }
 
 function applyEnvAiConfig() {
@@ -490,6 +574,199 @@ function resolveSquirrelUninstaller(execPath) {
     path.resolve(path.dirname(execPath), "..", "Update.exe")
   ];
   return candidates.find((candidate) => existsSync(candidate)) || candidates[0];
+}
+
+function dirSizeSync(dir) {
+  let total = 0;
+  const walk = (current) => {
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        try {
+          total += statSync(full).size;
+        } catch {}
+      }
+    }
+  };
+  walk(dir);
+  return total;
+}
+
+async function clearDirContents(dir) {
+  const resolved = path.resolve(dir);
+  let entries = [];
+  try {
+    entries = await readdir(resolved, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const target = path.resolve(resolved, entry.name);
+    if (!target.startsWith(resolved + path.sep)) continue;
+    await rm(target, { recursive: true, force: true });
+  }
+}
+
+async function moveDirectory(source, target) {
+  const src = path.resolve(source);
+  const dest = path.resolve(target);
+  if (!existsSync(src)) {
+    mkdirSync(dest, { recursive: true });
+    return;
+  }
+  if (existsSync(dest)) {
+    const error = new Error("目标目录已存在");
+    error.code = "target-exists";
+    throw error;
+  }
+  try {
+    await rename(src, dest);
+  } catch (error) {
+    if (error.code !== "EXDEV" && error.code !== "EPERM") throw error;
+    await cp(src, dest, { recursive: true, force: false });
+    await rm(src, { recursive: true, force: true });
+  }
+}
+
+function samePath(left, right) {
+  const a = path.resolve(left);
+  const b = path.resolve(right);
+  return process.platform === "win32"
+    ? a.toLowerCase() === b.toLowerCase()
+    : a === b;
+}
+
+function validateDataLocation(target) {
+  if (!path.isAbsolute(target)) return "not-absolute";
+  if (samePath(target, bootstrapRoot) || samePath(target, dataRoot)) {
+    return "same-as-current";
+  }
+  if (path.parse(target).root === target) return "drive-root";
+  if (
+    target.startsWith(path.resolve(dataRoot) + path.sep) ||
+    target.startsWith(path.resolve(bootstrapRoot) + path.sep)
+  ) {
+    return "inside-current";
+  }
+  if (
+    path.resolve(dataRoot).startsWith(target + path.sep) ||
+    path.resolve(bootstrapRoot).startsWith(target + path.sep)
+  ) {
+    return "contains-current";
+  }
+  const appRoot = path.resolve(app.getAppPath());
+  if (target === appRoot || target.startsWith(appRoot + path.sep)) {
+    return "inside-install";
+  }
+  return null;
+}
+
+function prepareRelocation(newUploads) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      relocatePending = null;
+      resolve({ ok: false, error: "relocate-timeout" });
+    }, 20000);
+    relocatePending = {
+      resolve: (message) => {
+        clearTimeout(timer);
+        resolve(
+          message?.type === "relocate-prepared"
+            ? { ok: true, rewritten: message.rewritten }
+            : { ok: false, error: message?.errorCode || "relocate-rewrite-failed" }
+        );
+      }
+    };
+    worker.postMessage({
+      type: "relocate-prepare",
+      oldUploads: dirs.uploads,
+      newUploads
+    });
+  });
+}
+
+async function relocateDataRoot(target) {
+  const resolved = path.resolve(target);
+  const validation = validateDataLocation(resolved);
+  if (validation) return { ok: false, error: validation };
+  mkdirSync(resolved, { recursive: true });
+  const probe = path.join(resolved, `.wenche-probe-${randomUUID()}`);
+  try {
+    await writeFile(probe, "ok", "utf8");
+    await rm(probe, { force: true });
+  } catch {
+    return { ok: false, error: "target-not-writable" };
+  }
+
+  const newDataRoot = resolved;
+  const dbPath = path.join(dirs.data, "reader.sqlite");
+  const backupName = `pre-relocate-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`;
+  if (existsSync(dbPath)) {
+    await copyFile(dbPath, path.join(dirs.backups, backupName));
+  }
+
+  const prepared = await prepareRelocation(path.join(newDataRoot, "uploads"));
+  if (!prepared.ok) return prepared;
+
+  await gracefulShutdown();
+
+  const movable = ["data", "uploads", "cache", "backups"];
+  const moved = [];
+  try {
+    for (const name of movable) {
+      await moveDirectory(
+        path.join(dataRoot, name),
+        path.join(newDataRoot, name)
+      );
+      moved.push(name);
+    }
+  } catch (error) {
+    logger("error", `data relocation move failed: ${error.code || error.message}`);
+    for (const name of moved.reverse()) {
+      try {
+        await moveDirectory(
+          path.join(newDataRoot, name),
+          path.join(dataRoot, name)
+        );
+      } catch (rollbackError) {
+        logger("error", `relocation rollback failed for ${name}: ${rollbackError.message}`);
+      }
+    }
+    try {
+      if (existsSync(path.join(dirs.backups, backupName))) {
+        await copyFile(path.join(dirs.backups, backupName), dbPath);
+      }
+    } catch {}
+    return { ok: false, error: "relocate-move-failed" };
+  }
+
+  try {
+    await writeDataLocationPointer(newDataRoot);
+  } catch (error) {
+    logger("error", `data-location pointer write failed: ${error.message}`);
+    return { ok: false, error: "pointer-write-failed" };
+  }
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 300);
+  return { ok: true };
+}
+
+async function writeDataLocationPointer(root) {
+  await writeAtomic(
+    path.join(bootstrapRoot, DATA_LOCATION_FILE),
+    JSON.stringify({ root, migratedAt: new Date().toISOString() }, null, 2) +
+      "\n"
+  );
 }
 
 function isTrustedSender(event) {

@@ -1,6 +1,7 @@
 import { expect, test as base, _electron as electron } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -409,6 +410,73 @@ test("keeps the AI panel inside a small restored window", async ({
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
   expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
+});
+
+test("reports storage usage and cleans safe caches", async ({ desktopApp }) => {
+  const { page, root } = desktopApp;
+  const rssImagesDir = path.join(root, "cache", "rss-images");
+  await mkdir(rssImagesDir, { recursive: true });
+  await writeFile(path.join(rssImagesDir, "pic.bin"), Buffer.alloc(2048));
+
+  const before = await page.evaluate(() => window.wencheDesktop.getStorageInfo());
+  expect(before.ok).toBe(true);
+  const rssEntry = before.entries.find((entry) => entry.key === "rss-images");
+  expect(rssEntry.size).toBeGreaterThanOrEqual(2048);
+
+  const cleaned = await page.evaluate(() =>
+    window.wencheDesktop.cleanCache("rss-images")
+  );
+  expect(cleaned.ok).toBe(true);
+
+  const after = await page.evaluate(() => window.wencheDesktop.getStorageInfo());
+  expect(after.entries.find((entry) => entry.key === "rss-images").size).toBe(0);
+});
+
+test("relocates the data root and keeps documents readable", async () => {
+  const rootA = await mkdtemp(path.join(tmpdir(), "wenche-relocate-a-"));
+  const rootB = await mkdtemp(path.join(tmpdir(), "wenche-relocate-b-"));
+  try {
+    const first = await launchAt(rootA);
+    const firstPage = first.page;
+    const contentBase64 = Buffer.from(
+      "数据目录迁移后仍可阅读的正文。",
+      "utf8"
+    ).toString("base64");
+    const created = await firstPage.evaluate(async (base64) => {
+      const response = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "relocate.txt", contentBase64: base64 })
+      });
+      return response.json();
+    }, contentBase64);
+    expect(created.id).toBeGreaterThan(0);
+
+    const relocated = await firstPage.evaluate((target) =>
+      window.wencheDesktop.relocateData(target)
+    , rootB);
+    expect(relocated.ok).toBe(true);
+    await first.app.close().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const pointer = JSON.parse(
+      await readFile(path.join(rootA, "data-location.json"), "utf8")
+    );
+    expect(path.resolve(pointer.root)).toBe(path.resolve(rootB));
+    expect(existsSync(path.join(rootB, "data", "reader.sqlite"))).toBe(true);
+
+    const second = await launchAt(rootA);
+    const documents = await second.page.evaluate(async () => {
+      const response = await fetch("/api/documents");
+      return response.json();
+    });
+    expect(documents.documents.length).toBe(1);
+    expect(documents.documents[0].title).toBe("relocate.txt");
+    await second.app.close();
+  } finally {
+    await rm(rootA, { recursive: true, force: true }).catch(() => {});
+    await rm(rootB, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 test("denies popups and permission requests", async ({ desktopApp }) => {
