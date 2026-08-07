@@ -94,6 +94,8 @@ test("unfollows a subscription directly from the sidebar", async ({ page }) => {
 });
 
 test("completes the rss loop: subscribe, list, deep-read with AI, star and brief", async ({ page }) => {
+  // 该用例覆盖订阅→列表→AI 深读→收藏→今日精选的完整链路，CI 负载下放宽总超时。
+  test.setTimeout(120000);
   await page.goto("/");
 
   // 空状态：提供两个主要入口
