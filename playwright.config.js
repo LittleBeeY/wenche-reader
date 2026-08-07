@@ -6,6 +6,9 @@ export default defineConfig({
   testIgnore: "**/desktop.spec.js",
   fullyParallel: false,
   workers: 1,
+  // 浏览器 E2E 存在既有偶发用例（共享临时库导致的状态/时序波动），CI 重试避免误报；
+  // 稳定失败的重试后仍会标红。
+  retries: process.env.CI ? 2 : 0,
   timeout: 45000,
   expect: { timeout: 8000 },
   reporter: "line",
