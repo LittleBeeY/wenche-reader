@@ -263,6 +263,21 @@
                 <input id="restore-backup" type="file" accept="application/json,.json" />
               </div>
             </details>
+
+            <details id="desktop-about" class="sidebar-disclosure desktop-only" hidden>
+              <summary>
+                <span>关于与更新</span>
+              </summary>
+              <div class="sidebar-disclosure-body desktop-about-body">
+                <p id="desktop-version"></p>
+                <p id="desktop-update-state"></p>
+                <div class="desktop-about-actions">
+                  <button id="desktop-check-updates" type="button">检查更新</button>
+                  <button id="desktop-install-update" type="button" hidden>重启并安装</button>
+                  <button id="desktop-open-logs" type="button">打开日志目录</button>
+                </div>
+              </div>
+            </details>
           </div>
         </details>
       </aside>
@@ -780,5 +795,6 @@
     <script src="/vendor/jszip.min.js"></script>
     <script src="/vendor/docx-preview.min.js"></script>
     <script src="/app.js?v=11" type="module"></script>
+    <script src="/desktopUi.js?v=1" type="module"></script>
   </body>
 </html>

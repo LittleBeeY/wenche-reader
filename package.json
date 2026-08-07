@@ -2,6 +2,9 @@
   "name": "wenche-reader",
   "version": "1.1.0",
   "description": "文澈阅读：本地优先、支持划词 AI 解析的深度阅读器",
+  "main": "desktop/main.js",
+  "productName": "文澈阅读",
+  "author": "LittleBeeY",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -9,10 +12,14 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
+    "dev": "node --watch src/cli.js",
+    "start": "node src/cli.js",
     "open": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/open-reader.ps1",
     "config:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/config-ai.ps1",
+    "desktop:dev": "electron-forge start",
+    "desktop:make": "electron-forge make --platform=win32 --arch=x64",
+    "test:desktop": "playwright test --config=playwright.desktop.config.js",
+    "test:packaged": "node scripts/smoke-packaged.mjs",
     "test": "node --test",
     "test:unit": "node --test test/*.test.js",
     "test:ai": "node --test test/ai-provider.test.js test/selection.test.js test/selection-anchors.test.js test/answer-citations.test.js test/answer-references.test.js test/ai-evaluation.test.js",
@@ -25,14 +32,21 @@
     "adm-zip": "^0.6.0",
     "docx-preview": "^0.4.0",
     "dompurify": "^3.4.12",
+    "electron-squirrel-startup": "1.0.1",
     "express": "^4.22.1",
+    "jszip": "3.10.1",
     "mammoth": "^1.8.0",
     "marked": "^18.0.5",
     "pdf-parse": "^2.4.5",
     "sanitize-html": "^2.13.0"
   },
   "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
+    "@electron-forge/plugin-fuses": "7.11.2",
+    "@electron/fuses": "1.8.0",
     "@playwright/test": "^1.61.1",
+    "electron": "43.3.0",
     "jsdom": "^29.1.1"
   }
 }

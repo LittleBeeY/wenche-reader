@@ -10,6 +10,10 @@
 
 - [RSS_DESIGN.md](RSS_DESIGN.md)：已实现的内嵌“资讯”版块设计基线，包含产品定位、页面、AI 分诊、数据模型、安全、API、实施阶段和验收标准。
 
+## 已实现的桌面发行规范
+
+- [desktop/README.md](desktop/README.md)：Windows 桌面发行版（Electron 43 + Forge/Squirrel）的规范性实现合同，包含目标架构、文件级实现、数据安全、打包更新和验收要求。该目录面向编码 agent 与后续维护者，行为以代码和测试为准。
+
 ## 历史实施记录
 
 `superpowers/specs/` 和 `superpowers/plans/` 保存 2026-07-09 的功能设计与实施过程，用于追溯当时的取舍，不是当前待办清单。当前行为以代码、测试和上面的现行文档为准。

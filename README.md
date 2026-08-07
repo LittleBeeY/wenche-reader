@@ -75,6 +75,15 @@ $env:PORT="3127"
 npm.cmd start
 ```
 
+## Windows 桌面版
+
+面向 Windows 10/11 x64 的桌面发行版（无需安装 Node.js）：
+
+- 双击 `WencheReader-Setup.exe` 完成安装，从开始菜单或桌面快捷方式启动；
+- 阅读数据保存在 `%LOCALAPPDATA%\Wenche Reader`，卸载不会删除用户数据；
+- 侧栏「更多 → 关于与更新」可查看版本、检查更新、重启安装与打开日志目录；
+- 源码启动方式继续保留：`npm.cmd start`，桌面开发用 `npm.cmd run desktop:dev`。
+
 ## 配置 AI
 
 默认使用 Mock provider，方便在没有 API Key 时测试阅读和交互流程，但不会产生真实模型回答。

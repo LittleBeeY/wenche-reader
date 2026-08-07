@@ -10,6 +10,10 @@ npm.cmd start
 npm.cmd run dev
 npm.cmd test
 npm.cmd run test:e2e
+npm.cmd run test:desktop
+npm.cmd run desktop:dev
+npm.cmd run desktop:make
+npm.cmd run test:packaged
 npm.cmd run open
 npm.cmd run config:ai
 ```
@@ -20,17 +24,24 @@ npm.cmd run config:ai
 
 - `public/`：浏览器 UI 和纯前端辅助模块。
 - `src/server.js`：HTTP 路由和上传文件生命周期。
+- `src/cli.js` / `src/runtime.js`：CLI 与 Electron utility process 共用的启动运行时。
 - `src/lib/documentParser.js`：所有文档解析、HTML/CSS 清洗。
+- `src/lib/aiSettingsStore.js`：AI 设置存储接口（Env 与桌面 IPC 两种实现）。
 - `src/lib/storage.js`：SQLite schema、迁移和事务。
 - `src/lib/aiProvider.js`：AI provider adapter 和提示词。
 - `src/lib/markdownExport.js`：阅读标注和 AI 回答沉淀的 Markdown 导出。
 - `src/lib/selectionContext.js`：选区及全文上下文裁剪。
 - `test/`：Node test runner 测试，服务 API 使用临时数据目录。
 - `e2e/`：Playwright 跨浏览器流程，使用隔离临时数据目录和 Mock provider。
+- `desktop/`：Electron main、utility process、`app://` 协议、preload、配置仓库与更新器；业务代码不反向依赖 Electron。
 
 ## 必须保持的约束
 
 - 不要提交 `.env`、`data/`、`uploads/`、日志或 `node_modules/`。
+- 桌面版本地服务只监听 `127.0.0.1` 随机端口，所有 API 必须携带每次启动随机生成的会话令牌；main 只向自己的协议代理写入令牌。
+- AI Key 在桌面版只经 `safeStorage` 加密保存于 `%LOCALAPPDATA%\Wenche Reader\secrets`，不得写入 `.env`、SQLite、日志或备份。
+- SQLite 只能由 utility process 持有；main、renderer、preload 和更新器不得打开数据库。
+- 生产窗口必须保持 `sandbox: true`、`contextIsolation: true`、`nodeIntegration: false`，并拒绝未授权的 window.open、导航与权限请求。
 - 新文件格式必须通过 `documentParser.js` 接入，并补解析与安全测试；不要在路由或前端另写解析器。
 - DOCX 的 AI 文本继续由 Mammoth 和 `documentParser.js` 生成；视觉页面由 `public/docxPreview.js` 调用 docx-preview 渲染。原文件读取必须验证路径仍位于 `uploads/`。
 - 任何写入 `innerHTML` 的模型或文档内容都必须先清洗。AI Markdown 继续使用 `marked` + DOMPurify。

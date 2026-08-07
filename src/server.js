@@ -1,5 +1,5 @@
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
@@ -13,12 +13,11 @@ import {
   PROVIDER_PRESETS,
   resolveAiProviderConfig
 } from "./lib/aiProvider.js";
+import { EnvAiSettingsStore } from "./lib/aiSettingsStore.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
-import { loadEnvFile, updateEnvFile } from "./lib/env.js";
 import { buildReadingMarkdown } from "./lib/markdownExport.js";
 import { registerRssRoutes } from "./lib/rss/rssRoutes.js";
 import { RssImageCache } from "./lib/rss/imageProxy.js";
-import { RssScheduler } from "./lib/rss/rssScheduler.js";
 import { RssService } from "./lib/rss/rssService.js";
 import { createSafeLookup, validateRemoteUrl } from "./lib/rss/ssrfGuard.js";
 import { buildContextBundle } from "./lib/selectionContext.js";
@@ -52,6 +51,12 @@ export function createApp(options = {}) {
   const dataDir = options.dataDir || path.join(projectRoot, "data");
   const uploadDir = options.uploadDir || path.join(projectRoot, "uploads");
   const envPath = options.envPath || path.join(projectRoot, ".env");
+  const staticRoot = options.staticRoot || path.join(projectRoot, "public");
+  const rssImageCacheDir =
+    options.rssImageCacheDir || path.join(dataDir, "rss-image-cache");
+  const settingsStore =
+    options.settingsStore || new EnvAiSettingsStore({ envPath });
+  const desktopSessionToken = options.desktopSessionToken || "";
   const storage = options.storage || new Storage({ dataDir });
   let aiProvider = options.aiProvider || createAiProvider(options.aiProviderConfig);
   const aiRequestTimeoutMs = options.aiRequestTimeoutMs || 120000;
@@ -77,7 +82,7 @@ export function createApp(options = {}) {
     return aiProvider;
   }
   const rssImageCache = options.rssImageCache || new RssImageCache({
-    cacheDir: path.join(dataDir, "rss-image-cache"),
+    cacheDir: rssImageCacheDir,
     allowPrivateHosts: Boolean(options.rss?.allowPrivateHosts),
     fetchImpl: options.rss?.imageFetchImpl
   });
@@ -88,8 +93,11 @@ export function createApp(options = {}) {
   app.locals.rssImageCache = rssImageCache;
   app.disable("x-powered-by");
   app.use(setSecurityHeaders);
+  if (desktopSessionToken) {
+    app.use(createDesktopSessionGuard(desktopSessionToken));
+  }
   app.use(express.json({ limit: "220mb" }));
-  app.use(express.static(path.join(projectRoot, "public")));
+  app.use(express.static(staticRoot));
   app.get("/vendor/marked.min.js", (req, res) => {
     res.sendFile(path.join(projectRoot, "node_modules", "marked", "lib", "marked.umd.js"));
   });
@@ -479,15 +487,12 @@ export function createApp(options = {}) {
 
   app.get("/api/ai/settings", async (req, res) => {
     try {
-      const current = typeof aiProvider.getStatus === "function"
-        ? aiProvider.getStatus()
-        : { provider: aiProvider.name || "unknown", model: "" };
-      const hasApiKey = Boolean(process.env.AI_API_KEY);
+      const stored = await settingsStore.read();
       return res.json({
-        provider: current.provider || "mock",
-        baseUrl: current.baseUrl || "",
-        model: current.model || "",
-        hasApiKey,
+        provider: stored.provider || "mock",
+        baseUrl: stored.baseUrl || "",
+        model: stored.model || "",
+        hasApiKey: Boolean(stored.apiKey),
         providers: listProviderOptions()
       });
     } catch (error) {
@@ -497,11 +502,13 @@ export function createApp(options = {}) {
 
   app.post("/api/ai/settings", async (req, res) => {
     try {
-      const config = normalizeAiSettingsInput(req.body);
-      const saved = await saveAiSettings(envPath, config);
+      const input = normalizeAiSettingsInput(req.body);
+      const current = await settingsStore.read();
+      const fullConfig = resolveFullAiConfig(input, current);
+      const saved = await settingsStore.write(fullConfig);
       const reloaded = reloadAiProvider(saved.config);
       const status = reloaded.getStatus();
-      return res.json({ ok: true, ...status, hasApiKey: Boolean(saved.config.apiKey) });
+      return res.json({ ok: true, ...status, hasApiKey: Boolean(saved.apiKey) });
     } catch (error) {
       return sendError(res, error);
     }
@@ -509,8 +516,12 @@ export function createApp(options = {}) {
 
   app.post("/api/ai/settings/test", async (req, res) => {
     try {
-      const config = normalizeAiSettingsInput(req.body);
-      const result = await testAiConnection(config, { requestImpl: aiTestRequestImpl });
+      const input = normalizeAiSettingsInput(req.body);
+      const current = await settingsStore.read();
+      const fullConfig = resolveFullAiConfig(input, current);
+      const result = await testAiConnection(fullConfig, {
+        requestImpl: aiTestRequestImpl
+      });
       return res.json(result);
     } catch (error) {
       return sendError(res, error);
@@ -1146,35 +1157,56 @@ function normalizeAiSettingsInput(body) {
   };
 }
 
-async function saveAiSettings(envPath, input) {
-  let updates;
+function resolveFullAiConfig(input, current) {
   if (input.provider === "mock") {
-    // 切回 Mock 只禁用真实接口，保留已保存的 Key 与地址，避免破坏用户配置
-    updates = { AI_PROVIDER: "mock" };
-  } else {
-    const resolved = resolveAiProviderConfig(aiSettingsToProviderConfig(input));
-    if (!resolved.model) {
-      throw new HttpError(400, "该接口需要填写模型名称（AI_MODEL）");
-    }
-    updates = {
-      AI_PROVIDER: resolved.provider,
-      AI_API_KEY: input.clearKey ? "" : resolved.apiKey,
-      AI_API_BASE: resolved.baseUrl,
-      AI_MODEL: resolved.model
+    return {
+      provider: "mock",
+      apiKey: input.clearKey ? "" : input.apiKey || current.apiKey || "",
+      baseUrl: input.baseUrl || current.baseUrl || "",
+      model: input.model || current.model || "",
+      clearKey: input.clearKey
     };
   }
-
-  await updateEnvFile(envPath, updates);
-  for (const [key, value] of Object.entries(updates)) {
-    process.env[key] = value;
+  const resolved = resolveAiProviderConfig(aiSettingsToProviderConfig(input, current));
+  if (!resolved.model) {
+    throw new HttpError(400, "该接口需要填写模型名称（AI_MODEL）");
   }
-  const config = {
-    provider: updates.AI_PROVIDER,
-    apiKey: updates.AI_API_KEY ?? process.env.AI_API_KEY ?? "",
-    baseUrl: updates.AI_API_BASE ?? process.env.AI_API_BASE ?? "",
-    model: updates.AI_MODEL ?? process.env.AI_MODEL ?? ""
+  return {
+    provider: resolved.provider,
+    apiKey: input.clearKey ? "" : resolved.apiKey,
+    baseUrl: resolved.baseUrl,
+    model: resolved.model,
+    clearKey: input.clearKey
   };
-  return { config };
+}
+
+/** 桌面会话鉴权：只接受回环 Host + 固定长度随机令牌，拒绝一切未认证访问。 */
+function createDesktopSessionGuard(token) {
+  const expected = Buffer.from(token, "utf8");
+  return (req, res, next) => {
+    if (!isLoopbackHost(req.headers.host, req.socket.localPort)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const header = req.headers["x-wenche-session"];
+    if (
+      typeof header !== "string" ||
+      header.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(header, "utf8"), expected)
+    ) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    return next();
+  };
+}
+
+function isLoopbackHost(host, localPort) {
+  if (typeof host !== "string" || !host) return false;
+  const match = host
+    .toLowerCase()
+    .match(/^(localhost|127\.0\.0\.1|\[::1\])(?::(\d+))?$/);
+  if (!match) return false;
+  const port = match[2];
+  return port === undefined || Number(port) === Number(localPort);
 }
 
 function buildTestRequest(resolved) {
@@ -1208,10 +1240,10 @@ function providerTestErrorMessage(text) {
 }
 
 /** 表单中的空字符串视为「使用预设/环境默认」，避免空值覆盖预设默认地址。 */
-function aiSettingsToProviderConfig(input) {
+function aiSettingsToProviderConfig(input, current = {}) {
   return {
     provider: input.provider,
-    apiKey: input.apiKey || process.env.AI_API_KEY || "",
+    apiKey: input.apiKey || current.apiKey || "",
     ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
     ...(input.model ? { model: input.model } : {})
   };
@@ -1317,14 +1349,3 @@ async function testAiConnection(input, { requestImpl } = {}) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await loadEnvFile(path.join(projectRoot, ".env"));
-  const port = Number(process.env.PORT || 3000);
-  const host = process.env.HOST || "127.0.0.1";
-  const app = createApp();
-  app.listen(port, host, () => {
-    console.log(`${APP_INFO.name} V${APP_INFO.version} running at http://${host}:${port}`);
-    const scheduler = new RssScheduler({ rssService: app.locals.rssService });
-    scheduler.start();
-  });
-}

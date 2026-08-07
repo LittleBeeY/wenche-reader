@@ -4,6 +4,18 @@
 
 文澈阅读是单进程、本地优先的 Web 应用。Express 同时提供静态前端和 JSON API；SQLite 保存结构化数据，原始上传文件保存在本地目录。应用没有账号系统，默认只监听 `127.0.0.1`，适合可信的单机环境。
 
+## 桌面发行架构（Electron）
+
+Windows 10/11 x64 桌面版复用同一套 Express / `node:sqlite` 业务代码，进程边界如下：
+
+- `desktop/main.js`：可信桌面能力（窗口、`app://` 协议、safeStorage、更新器、单实例锁），不解析文档、不调用模型、不打开 SQLite；
+- `desktop/backendWorker.js`：utility process，唯一长期持有 SQLite 的后端宿主，调用 `src/runtime.js` 启动 Express 与 RSS 调度器；
+- `desktop/protocol.js`：`app://wenche/` 静态映射与 `/api/*` 代理，代理请求时写入 main 生成的唯一会话令牌；
+- `desktop/settingsRepository.js`：`config/settings.json`（非敏感）与 `secrets/ai-key.bin`（safeStorage 加密）的持久化；
+- 数据根目录固定为 `%LOCALAPPDATA%\Wenche Reader`（`data/`、`uploads/`、`cache/rss-images`、`config/`、`secrets/`、`backups/`、`logs/`、`session/`）。
+
+Web/CLI 入口保持不变：`src/cli.js` 经 `src/runtime.js` 启动同一个 `createApp`；桌面 utility process 也调用 `startRuntime`，仅把设置存储换成 IPC store，并启用桌面会话鉴权。
+
 ## 组件
 
 | 位置 | 职责 |
