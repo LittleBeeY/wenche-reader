@@ -40,6 +40,7 @@ scripts\open-reader.cmd
 
 - 运行 `npm.cmd run desktop:make` 生成 `out/make/squirrel.windows/x64/` 下的 `WencheReader-Setup.exe`；桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
 - 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
+- 安装/卸载/快捷方式显示名为 `WencheReader`（Squirrel 使用可执行文件名生成），卸载入口在「设置 → 应用」或 `Update.exe --uninstall`；Web/CLI 数据迁移到桌面版使用 V2 备份导出/恢复，桌面版不会自动读取仓库数据目录。
 - 更新：侧栏「更多 → 关于与更新」。仅打包版且配置 `WENCHE_UPDATE_BASE_URL` 后启用，频道由 `config/settings.json` 的 `updates.channel` 决定（`stable`/`beta`）。
 - 首次启动会在版本变更时自动把 `data/reader.sqlite` 备份到 `backups/pre-upgrade-*.sqlite`（保留最近 3 份）；存在 `reader.sqlite-wal`/`reader.sqlite-shm` 时会拒绝启动并显示错误页。
 - AI Key 保存在 `secrets/ai-key.bin`（safeStorage 加密），不再写入 `.env`；升级后 Key 仍可用但页面不回显。
