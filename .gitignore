@@ -5,6 +5,7 @@ uploads/
 *.log
 test-results/
 playwright-report/
+out/
 .workbuddy/
 .agents/
 .codex/

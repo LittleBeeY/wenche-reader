@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文澈阅读启动失败</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #e9efef;
+        color: #223333;
+        font-family: "Microsoft YaHei", system-ui, sans-serif;
+      }
+      .card {
+        max-width: 560px;
+        padding: 40px;
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 12px 40px rgba(20, 40, 40, 0.12);
+        text-align: center;
+      }
+      h1 { font-size: 22px; margin: 0 0 8px; }
+      p { line-height: 1.7; color: #5b6b6b; }
+      code {
+        background: #eef3f3;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        margin-top: 24px;
+      }
+      button {
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid #b9c6c6;
+        background: #ffffff;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button.primary {
+        background: #1f6f6f;
+        border-color: #1f6f6f;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>文澈阅读未能启动本地服务</h1>
+      <p>错误代码：<code id="error-code">unknown</code></p>
+      <p>
+        本地数据库或服务进程启动失败。请先尝试重新启动应用；如果问题持续，可打开日志目录检查诊断信息。
+      </p>
+      <div class="actions">
+        <button id="restart-app" type="button" class="primary">重新启动应用</button>
+        <button id="open-logs" type="button">打开日志目录</button>
+      </div>
+    </main>
+    <script src="/desktop-error.js"></script>
+  </body>
+</html>

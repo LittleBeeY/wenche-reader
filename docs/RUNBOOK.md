@@ -36,6 +36,15 @@ Windows 一键入口：
 scripts\open-reader.cmd
 ```
 
+## 桌面版安装与使用
+
+- 运行 `npm.cmd run desktop:make` 生成 `out/make/squirrel.windows/x64/` 下的 `WencheReader-Setup.exe`；桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
+- 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
+- 更新：侧栏「更多 → 关于与更新」。仅打包版且配置 `WENCHE_UPDATE_BASE_URL` 后启用，频道由 `config/settings.json` 的 `updates.channel` 决定（`stable`/`beta`）。
+- 首次启动会在版本变更时自动把 `data/reader.sqlite` 备份到 `backups/pre-upgrade-*.sqlite`（保留最近 3 份）；存在 `reader.sqlite-wal`/`reader.sqlite-shm` 时会拒绝启动并显示错误页。
+- AI Key 保存在 `secrets/ai-key.bin`（safeStorage 加密），不再写入 `.env`；升级后 Key 仍可用但页面不回显。
+- 排障：清空 `cache/` 不会丢数据；`data/`、`uploads/`、`config/`、`secrets/`、`backups/` 不要手动删除；卸载不会删除 `%LOCALAPPDATA%\Wenche Reader`。
+
 ## 配置 AI 接口（应用内）
 
 打开应用后点击 AI 面板顶部的「AI 接口」状态栏（本地文档视图）或资讯首页标题栏的 AI 按钮，即可进入设置对话框：选择接口、填写 API Key、按需调整根地址和模型，先「测试连接」再「保存设置」。保存后立即生效，无需重启服务，AI 初评等后台任务也会自动使用新配置。连接测试按接口类型发起：OpenAI-compatible 服务请求 `/models`，Anthropic 请求 `/v1/models`，Gemini 请求 `/v1beta/models`，本地 Ollama 请求 `/api/tags`；部分服务不提供对应接口时测试会失败，但配置仍可保存，以实际问答为准。
@@ -64,6 +73,8 @@ Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/documents
 npm.cmd test
 npm.cmd run test:ai
 npm.cmd run test:e2e
+npm.cmd run test:desktop
+npm.cmd run test:packaged
 npm.cmd run release:check
 ```
 
