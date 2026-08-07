@@ -30,7 +30,7 @@
 | 进程隔离 | Electron main 负责可信桌面能力；Express、SQLite 和 RSS 调度器运行在一个 utility process 中 |
 | 页面来源 | 生产窗口加载 `app://wenche/`；静态资源由协议处理器从应用包读取，`/api/*` 代理到随机回环端口 |
 | 本地服务 | 只监听 `127.0.0.1:0`，由系统分配端口；所有请求都要求每次启动随机生成的会话令牌 |
-| 数据位置 | `%LOCALAPPDATA%\Wenche Reader`，不写安装目录或 `app.asar` |
+| 数据位置 | 默认 `%LOCALAPPDATA%\Wenche Reader`；data/uploads/cache/backups 可通过设置迁移到自定义目录，config/secrets/logs/session 留在固定引导根；不写安装目录或 `app.asar` |
 | AI 密钥 | 由 Electron main 使用 `safeStorage` 加密；不再把桌面版 Key 写入 `.env` |
 | Web/CLI 兼容 | `npm start`、`.env` 配置和现有浏览器测试必须继续工作 |
 | 更新 | Electron `autoUpdater` + Squirrel.Windows 静态更新源；不从私有 GitHub Release 给终端用户更新 |
