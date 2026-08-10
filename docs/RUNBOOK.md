@@ -38,8 +38,8 @@ scripts\open-reader.cmd
 
 ## 桌面版安装与使用
 
-- 运行 `npm.cmd run desktop:make` 生成 `out/make/squirrel.windows/x64/` 下的 `WencheReader-Setup.exe`；桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
-- 本地构建若仓库路径含非 ASCII 字符（如 `D:\项目\...`），`electron-winstaller` 的 `rcedit` 可能报 `Unable to load file`；此时设置 `WENCHE_FORGE_OUT` 指向纯 ASCII 临时目录（如 `C:\Users\<用户>\AppData\Local\Temp\wenche-out`）再执行 `npm.cmd run desktop:make`，产物检查同样传入该变量。
+- 本地构建统一用 `npm.cmd run desktop:dist`：最终产物（`WencheReader-Setup.exe`、`wenche_reader-<版本>-full.nupkg`、`RELEASES`）固定落在 `<项目根>/release/`；脚本先在系统临时目录（纯 ASCII）构建再回拷，规避 `rcedit` 无法处理中文输出路径的问题。桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
+- 若需要直接 `npm.cmd run desktop:make`（CI 等 ASCII 路径场景），产物在 `out/make/squirrel.windows/x64/`；本地中文路径仓库不要直接使用该命令，会因 `rcedit` 报 `Unable to load file` 失败。
 - 安装位置固定为 `%LOCALAPPDATA%\wenche_reader`（Squirrel 按包 ID 决定用户级安装目录，不支持自定义安装位置）；如需可选安装目录只能换 NSIS/MSIX 安装器，并会失去 Squirrel 自动更新能力。
 - 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
 - 「设置 → 数据」可查看各目录占用并一键清理资讯图片缓存/浏览缓存；「更改位置」可把数据根（data/uploads/cache/backups）迁移到其他磁盘，迁移后应用自动重启，`config/secrets/logs/session` 留在引导根。
