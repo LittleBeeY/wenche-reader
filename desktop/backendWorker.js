@@ -22,10 +22,30 @@ parentPort.on("message", async (event) => {
       message.config,
       message.errorCode
     );
+  } else if (message.type === "settings-apply") {
+    store?.setSnapshot(message.config);
+    parentPort.postMessage({ type: "settings-applied" });
+  } else if (message.type === "relocate-prepare") {
+    await relocatePrepare(message);
   } else if (message.type === "shutdown-request") {
     await shutdownBackend();
   }
 });
+
+async function relocatePrepare({ oldUploads, newUploads }) {
+  try {
+    const result = runtime.storage.relocateUploads(oldUploads, newUploads);
+    parentPort.postMessage({
+      type: "relocate-prepared",
+      rewritten: result.rewritten
+    });
+  } catch (error) {
+    parentPort.postMessage({
+      type: "relocate-failed",
+      errorCode: "relocate-rewrite-failed"
+    });
+  }
+}
 
 /**
  * Electron utility process 入口：唯一持有 SQLite 的后端进程。

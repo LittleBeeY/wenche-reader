@@ -1963,6 +1963,45 @@ export class Storage {
     }
   }
 
+  /**
+   * 数据根目录迁移：把 uploads 相关绝对路径从旧根改写为新根。
+   * 只重写仍然指向旧 uploads 目录的 documents.file_path（含 RSS 快照），
+   * 事务内完成；返回改写条数。调用前必须保证所有引用这些文件的读写已停止。
+   */
+  relocateUploads(oldUploads, newUploads) {
+    const from = path.resolve(oldUploads);
+    const to = path.resolve(newUploads);
+    const rows = this.db
+      .prepare("SELECT id, file_path AS filePath FROM documents")
+      .all();
+    const update = this.db.prepare(
+      "UPDATE documents SET file_path = ? WHERE id = ?"
+    );
+    const prefix = from.endsWith(path.sep) ? from : `${from}${path.sep}`;
+    const items = [];
+    for (const row of rows) {
+      if (row.filePath && row.filePath.startsWith(prefix)) {
+        items.push({
+          id: row.id,
+          nextPath: path.join(to, row.filePath.slice(prefix.length))
+        });
+      }
+    }
+    if (items.length > 0) {
+      this.db.exec("BEGIN");
+      try {
+        for (const item of items) {
+          update.run(item.nextPath, item.id);
+        }
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    }
+    return { rewritten: items.length };
+  }
+
   close() {
     this.db.close();
   }

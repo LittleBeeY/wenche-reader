@@ -1,6 +1,7 @@
 import { expect, test as base, _electron as electron } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ const projectRoot = path.resolve(
   ".."
 );
 
-function launchOptions(root) {
+function launchOptions(root, extraEnv = {}) {
   return {
     args: [projectRoot, "--no-sandbox"],
     cwd: projectRoot,
@@ -18,13 +19,14 @@ function launchOptions(root) {
     env: {
       ...process.env,
       WENCHE_DESKTOP_DATA_ROOT: root,
-      NODE_ENV: "test"
+      NODE_ENV: "test",
+      ...extraEnv
     }
   };
 }
 
-async function launchAt(root) {
-  const app = await electron.launch(launchOptions(root));
+async function launchAt(root, extraEnv = {}) {
+  const app = await electron.launch(launchOptions(root, extraEnv));
   app.process().stdout?.on("data", (chunk) => {
     console.log(`[desktop-main] ${String(chunk).trim()}`);
   });
@@ -61,8 +63,12 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   await expect(page).toHaveTitle(/文澈阅读/);
   await expect(page.locator("#app-shell")).toBeVisible();
   await page.locator("#sidebar-more > summary").click();
-  await expect(page.locator("#desktop-about")).toBeVisible();
+  await expect(page.locator("#sidebar-settings-open")).toBeVisible();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await page.locator("#settings-close").click();
 
   const sandbox = await page.evaluate(() => ({
     hasRequire: typeof window.require !== "undefined",
@@ -211,6 +217,266 @@ test("single instance lock focuses the existing window", async ({
     });
   });
   expect(await app.windows()).toHaveLength(1);
+});
+
+test("saves AI settings through safeStorage and keeps them across restart", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "wenche-desktop-e2e-"));
+  try {
+    const first = await launchAt(root);
+    const firstPage = first.page;
+    await expect(firstPage.locator("#ai-status")).not.toContainText("正在检查", {
+      timeout: 30000
+    });
+    await firstPage.locator("#ai-status").click();
+    await expect(firstPage.locator("#settings-dialog")).toBeVisible();
+    await firstPage.locator("#ai-settings-provider").selectOption("openai");
+    await firstPage.locator("#ai-settings-key").fill("saved-secret-key");
+    await firstPage.locator("#ai-settings-save").click();
+    await expect(firstPage.locator("#settings-dialog")).not.toBeVisible();
+    await firstPage.locator("#ai-status").click();
+    await expect(firstPage.locator("#ai-settings-key-hint")).toContainText("已配置");
+    await firstPage.locator("#ai-settings-cancel").click();
+    await first.app.close();
+
+    const second = await launchAt(root);
+    const settings = await second.page.evaluate(async () => {
+      const response = await fetch("/api/ai/settings");
+      return response.json();
+    });
+    expect(settings.provider).toBe("openai");
+    expect(settings.hasApiKey).toBe(true);
+    expect(JSON.stringify(settings)).not.toContain("saved-secret-key");
+    await second.app.close();
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("uses AI_API_KEY from the environment for the current session only", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "wenche-desktop-e2e-"));
+  try {
+    const launched = await launchAt(root, {
+      AI_API_KEY: "env-session-key",
+      AI_PROVIDER: "openai",
+      AI_MODEL: "gpt-4.1-mini"
+    });
+    const { page } = launched;
+    const envState = await page.evaluate(() => window.wencheDesktop.getAiEnvState());
+    expect(envState).toEqual({ available: true, inUse: true });
+
+    const settings = await page.evaluate(async () => {
+      const response = await fetch("/api/ai/settings");
+      return response.json();
+    });
+    expect(settings.provider).toBe("openai");
+    expect(settings.hasApiKey).toBe(true);
+    expect(JSON.stringify(settings)).not.toContain("env-session-key");
+
+    await expect(page.locator("#ai-status")).not.toContainText("正在检查", {
+      timeout: 30000
+    });
+    await page.locator("#ai-status").click();
+    await expect(page.locator("#ai-settings-env")).toBeVisible();
+    await expect(page.locator("#ai-settings-env-text")).toContainText("环境变量");
+    await page.locator("#ai-settings-cancel").click();
+    await launched.app.close();
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("exposes an in-app uninstall entry that stays safe in dev mode", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
+  const uninstallButton = page.locator("#desktop-uninstall");
+  await expect(uninstallButton).toBeVisible();
+  await uninstallButton.click();
+  await expect(page.locator("#desktop-update-state")).toContainText(
+    "开发模式不支持应用内卸载"
+  );
+});
+
+test("explains that updates are disabled before a feed is configured", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#sidebar-settings-open").click();
+  await page.locator('[data-settings-tab="about"]').click();
+  await page.locator("#desktop-check-updates").click();
+  await expect(page.locator("#desktop-update-state")).toContainText(
+    "更新未启用"
+  );
+});
+
+test("keeps the RSS article AI panel floating with a visible launcher", async ({
+  desktopApp
+}) => {
+  const { app, page } = desktopApp;
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setMinimumSize(400, 300);
+    win.setSize(1280, 800);
+    win.setPosition(0, 0);
+  });
+  await page.waitForTimeout(400);
+  const geometry = await page.evaluate((collapsed) => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("rss-mode", "rss-reading");
+    shell.classList.toggle("is-right-collapsed", collapsed);
+    const panel = document.querySelector("#ai-panel").getBoundingClientRect();
+    const toggle = document.querySelector("#toggle-ai-panel").getBoundingClientRect();
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
+    const visible = (rect) =>
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.left >= 0 &&
+      rect.top >= 0 &&
+      rect.right <= viewport.width &&
+      rect.bottom <= viewport.height;
+    return {
+      panelVisible: visible(panel),
+      toggleVisible: visible(toggle),
+      toggle: { left: toggle.left, top: toggle.top, width: toggle.width, height: toggle.height }
+    };
+  }, false);
+  expect(geometry.panelVisible).toBe(true);
+
+  const collapsed = await page.evaluate(() => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("is-right-collapsed");
+    const toggle = document.querySelector("#toggle-ai-panel").getBoundingClientRect();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    return (
+      toggle.width > 0 &&
+      toggle.height > 0 &&
+      toggle.left >= 0 &&
+      toggle.top >= 0 &&
+      toggle.right <= viewport.width &&
+      toggle.bottom <= viewport.height
+    );
+  });
+  expect(collapsed).toBe(true);
+});
+
+test("opens the unified settings dialog from the RSS article menu", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.evaluate(() => {
+    const shell = document.querySelector("#app-shell");
+    shell.classList.add("rss-mode", "rss-reading");
+    document.querySelector(".rss-article-bar").hidden = false;
+  });
+  await page.locator(".rss-article-more > summary").click();
+  await page.locator("#rss-open-settings").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="about"]').click();
+  await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await page.locator("#settings-close").click();
+});
+
+test("keeps the AI panel inside a small restored window", async ({
+  desktopApp
+}) => {
+  const { app, page } = desktopApp;
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setMinimumSize(400, 300);
+    win.setSize(900, 560);
+    win.setPosition(0, 0);
+  });
+  await page.waitForTimeout(500);
+  const bounds = await page.evaluate(() => {
+    const rect = document.querySelector("#ai-panel").getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      left: rect.left,
+      right: rect.right,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    };
+  });
+  expect(bounds.top).toBeGreaterThanOrEqual(0);
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
+});
+
+test("reports storage usage and cleans safe caches", async ({ desktopApp }) => {
+  const { page, root } = desktopApp;
+  const rssImagesDir = path.join(root, "cache", "rss-images");
+  await mkdir(rssImagesDir, { recursive: true });
+  await writeFile(path.join(rssImagesDir, "pic.bin"), Buffer.alloc(2048));
+
+  const before = await page.evaluate(() => window.wencheDesktop.getStorageInfo());
+  expect(before.ok).toBe(true);
+  const rssEntry = before.entries.find((entry) => entry.key === "rss-images");
+  expect(rssEntry.size).toBeGreaterThanOrEqual(2048);
+
+  const cleaned = await page.evaluate(() =>
+    window.wencheDesktop.cleanCache("rss-images")
+  );
+  expect(cleaned.ok).toBe(true);
+
+  const after = await page.evaluate(() => window.wencheDesktop.getStorageInfo());
+  expect(after.entries.find((entry) => entry.key === "rss-images").size).toBe(0);
+});
+
+test("relocates the data root and keeps documents readable", async () => {
+  const rootA = await mkdtemp(path.join(tmpdir(), "wenche-relocate-a-"));
+  const rootB = await mkdtemp(path.join(tmpdir(), "wenche-relocate-b-"));
+  try {
+    const first = await launchAt(rootA);
+    const firstPage = first.page;
+    const contentBase64 = Buffer.from(
+      "数据目录迁移后仍可阅读的正文。",
+      "utf8"
+    ).toString("base64");
+    const created = await firstPage.evaluate(async (base64) => {
+      const response = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "relocate.txt", contentBase64: base64 })
+      });
+      return response.json();
+    }, contentBase64);
+    expect(created.id).toBeGreaterThan(0);
+
+    const relocated = await firstPage.evaluate((target) =>
+      window.wencheDesktop.relocateData(target)
+    , rootB);
+    expect(relocated.ok).toBe(true);
+    await first.app.close().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const pointer = JSON.parse(
+      await readFile(path.join(rootA, "data-location.json"), "utf8")
+    );
+    expect(path.resolve(pointer.root)).toBe(path.resolve(rootB));
+    expect(existsSync(path.join(rootB, "data", "reader.sqlite"))).toBe(true);
+
+    const second = await launchAt(rootA);
+    const documents = await second.page.evaluate(async () => {
+      const response = await fetch("/api/documents");
+      return response.json();
+    });
+    expect(documents.documents.length).toBe(1);
+    expect(documents.documents[0].title).toBe("relocate.txt");
+    await second.app.close();
+  } finally {
+    await rm(rootA, { recursive: true, force: true }).catch(() => {});
+    await rm(rootB, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 test("denies popups and permission requests", async ({ desktopApp }) => {

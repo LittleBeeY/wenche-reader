@@ -38,7 +38,7 @@ test("keeps the left navigation compact and tucks low-frequency tools into More"
   await expect(page.locator("#document-sidebar")).toHaveCSS("width", "288px");
   await expect(page.locator("#sidebar-more")).toHaveJSProperty("open", true);
   await expect(page.locator("#library-organize > summary")).toContainText("管理文档");
-  await expect(page.locator(".data-tools > summary")).toContainText("备份与恢复");
+  await expect(page.locator("#sidebar-settings-open")).toContainText("设置");
 
   await page.locator("#library-organize > summary").click();
   await expect(page.locator(".document-select").first()).toBeVisible();

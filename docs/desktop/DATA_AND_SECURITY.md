@@ -33,10 +33,14 @@
 
 ## 2. 持久目录
 
-唯一数据根目录：
+桌面版区分两个根目录：
+
+- **引导根（固定）**：默认 `%LOCALAPPDATA%\Wenche Reader`。存放 `config/`、`secrets/`、`logs/`、`session/` 和 `data-location.json` 指针；Chromium `userData` 指向这里。
+- **数据根（默认=引导根，可迁移）**：存放 `data/`、`uploads/`、`cache/`、`backups/`。未迁移时与引导根同目录（即现有布局不变）；迁移后由 `data-location.json` 指向新位置。
 
 ```text
 %LOCALAPPDATA%\Wenche Reader\
+├─ data-location.json        （未迁移时不存在；存在时指向数据根）
 ├─ data\
 │  └─ reader.sqlite
 ├─ uploads\
@@ -56,16 +60,31 @@
 规范：
 
 - main 在 `app.ready` 前创建根目录，并把 Electron `userData` 指向该根目录；
-- `sessionData` 指向 `session/`，避免 Chromium cache 混入业务数据；
+- `sessionData` 指向引导根 `session/`，避免 Chromium cache 混入业务数据；浏览缓存不属于用户数据，可随时清除；
 - `dataDir`、`uploadDir`、`rssImageCacheDir` 显式传给 worker；
 - 任何生产代码不得回退到 `process.cwd()` 或安装目录写数据；
 - 任何测试必须传临时根目录；
-- cache 可安全清除，但数据库、uploads、config、secrets 和 backups 不得自动清除；
+- `cache/rss-images` 与 `session/` 可安全清除；数据库、uploads、config、secrets 和 backups 不得自动清除；
 - 日志轮转只删除超过保留策略的日志，不触碰其他目录。
 
 若 `%LOCALAPPDATA%` 缺失、不是绝对路径或目录不可写，应用必须显示启动错误并退出；不得静默写到源码目录、`%TEMP%` 或当前工作目录。
 
 开发与 Electron E2E 可以在 `!app.isPackaged` 时通过 `WENCHE_DESKTOP_DATA_ROOT` 指定绝对临时根目录。生产包必须忽略该环境变量，防止发行行为依赖调用者环境。测试结束时只清理自己创建且已验证位于系统临时目录下的根。
+
+### 2.1 数据位置迁移与占用管理
+
+「设置 → 数据」提供两项能力（桌面版）：
+
+- **占用管理**：按目录显示占用大小；`cache/rss-images` 与 `session/` 可一键清理（安全清除，不触碰用户数据）。
+- **更改数据位置**：把数据根迁移到任意可写目录（Squirrel 只约束安装目录，不约束数据位置）。
+
+迁移顺序与约束：
+
+- 目标必须为绝对路径、可写，且不能是磁盘根目录、当前数据根/引导根本身或其子目录、应用安装目录；
+- 先备份 `reader.sqlite` 到 `backups/pre-relocate-*.sqlite` → worker 事务内把 `documents.file_path`（含 RSS 快照）从旧 uploads 前缀改写为新前缀 → 优雅关闭 worker → 逐目录移动 `data/uploads/cache/backups`（同盘 rename，跨盘复制校验后删除）→ 写入 `data-location.json` → 应用重启；
+- 移动失败时回滚已移动目录并恢复数据库备份，不写指针，旧布局保持可用；
+- 迁移只重写仍指向旧 uploads 的路径；`config/`、`secrets/`、`logs/`、`session/` 留在引导根；
+- 迁移后必须重启应用生效，期间不执行更新检查。
 
 ## 3. SQLite 和原文件路径
 
@@ -177,10 +196,22 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 - 两文件写入任一失败时，worker 保持旧 provider。main 应尽力恢复旧配置文件，不能回报成功；
 - 任何日志只记录 `hasApiKey: true/false`，不记录长度、前缀或哈希。
 
+### 6.4 环境变量 Key（仅当前会话）
+
+桌面版支持把启动进程环境中的 `AI_API_KEY` 作为「未保存 Key」的只读回退：
+
+- main 启动时读取 `AI_API_KEY`，可选 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL` 一起生效；未写 `AI_PROVIDER` 时默认 `openai`，非法值回退到 `openai`；
+- 没有已保存 Key 时自动作为当前会话配置；已有保存 Key 时以保存值为准，用户仍可在设置对话框显式选择应用环境变量 Key；
+- Key 只存在于 main/worker 内存与 bootstrap/apply 消息中，绝不写入 `settings.json`、`secrets/`、SQLite、日志、备份或 `.env`；
+- renderer 只能通过 IPC 得知 `available`/`inUse` 两个布尔值，不能读取 Key 本身；
+- 修改环境变量后必须重启应用才生效；桌面版不扫描仓库或任意目录的 `.env`，也不把调用者环境变量视为可信数据源之外的能力；
+- 与 Web/CLI 版的 `.env` 一样，这是用户主动提供的配置输入；应用不负责验证其来源，只保证不落盘、不回显。
+
 ## 7. Main/worker 秘密边界
 
 允许 Key 出现的位置：
 
+- 启动进程环境变量中用户主动设置的 `AI_API_KEY`/`AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`（只读输入，不写回）；
 - AI 设置 POST 的 renderer 请求内存；
 - utility process 当前配置内存；
 - main/worker 之间的结构化克隆消息内存；
@@ -189,11 +220,12 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 
 禁止 Key 出现的位置：
 
-- argv、环境变量和进程标题；
+- argv 和进程标题；
 - URL、query、Cookie、localStorage、sessionStorage 和 IndexedDB；
 - GET API、健康接口和错误响应；
 - SQLite、备份、Markdown 导出；
 - `settings.json`、`runtime-state.json`；
+- 应用回写或修改后的环境变量与 `.env`（Web/CLI 的 `.env` 写入只由 `EnvAiSettingsStore` 管理，桌面版不调用）；
 - main/worker stdout、日志和诊断报告；
 - GitHub Actions 日志、安装器和更新元数据。
 
@@ -315,6 +347,16 @@ DOCX、HTML、Markdown、模型输出和 RSS 内容继续走项目现有清洗�
 ## 13. 清除与卸载
 
 Squirrel 卸载默认只移除程序，不删除 LocalAppData。首版不在卸载器中加入递归删除用户数据。
+
+「关于与更新」提供应用内「卸载应用」按钮：
+
+- 只读定位安装根目录下的 `Update.exe`（兼容 Squirrel 根 stub 与 `app-<version>/` 两种 `process.execPath`）；
+- 弹出系统确认框，明确提示阅读数据保留在本地数据目录；
+- 确认后以分离进程执行 `Update.exe --uninstall`，随后应用退出；不传任何用户参数；
+- 开发模式（`!app.isPackaged`）拒绝执行，避免误卸源码目录；
+- 找不到 `Update.exe` 时只返回稳定错误码，不猜测路径、不递归删除。
+
+卸载完成后 `%LOCALAPPDATA%\Wenche Reader` 数据目录保留；是否提供「删除全部本地数据」是单独需求，见下。
 
 若 UI 提供“删除全部本地数据”，必须是单独需求和独立设计：需要二次确认、先关闭 worker、解析并显示精确目标根，并优先移动到回收站。它不属于本桌面化实现合同，agent 不得顺手加入。
 

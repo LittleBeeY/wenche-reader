@@ -313,6 +313,10 @@ repository.getPublicState()
 
 { type: "settings-write-result", requestId, ok, config?, errorCode? }
 
+{ type: "settings-apply", config }
+
+{ type: "relocate-prepare", oldUploads, newUploads }
+
 { type: "shutdown-request" }
 ```
 
@@ -331,6 +335,12 @@ repository.getPublicState()
 { type: "backend-start-error", code }
 
 { type: "settings-write", requestId, config }
+
+{ type: "settings-applied" }
+
+{ type: "relocate-prepared", rewritten }
+
+{ type: "relocate-failed", errorCode }
 
 { type: "shutdown-complete" }
 ```
@@ -386,9 +396,15 @@ API 转发必须保持 Response 流，不调用 `.text()`、`.json()`、`.arrayB
 ```js
 {
   getRuntimeInfo(): Promise<{ desktop: true, platform: "win32", version: string }>,
-  checkForUpdates(): Promise<{ accepted: boolean }>,
+  checkForUpdates(): Promise<{ accepted: boolean, reason?: "disabled" | "error" }>,
   restartToInstallUpdate(): Promise<{ accepted: boolean }>,
   openLogDirectory(): Promise<{ accepted: boolean }>,
+  getAiEnvState(): Promise<{ available: boolean, inUse: boolean }>,
+  applyEnvAiConfig(): Promise<{ accepted: boolean }>,
+  uninstallApp(): Promise<{ accepted: boolean, cancelled?: boolean, error?: "dev-mode" | "update-exe-missing" }>,
+  getStorageInfo(): Promise<{ ok: boolean, root: string, entries: Array<{ key, label, path, cleanable, size }>, total: number }>,
+  cleanCache(target: "rss-images" | "session"): Promise<{ ok: boolean, error?: "unknown-target" }>,
+  relocateData(target?: string): Promise<{ ok: boolean, cancelled?: boolean, error?: string }>,
   onUpdateState(callback): () => void
 }
 ```
@@ -402,7 +418,7 @@ API 转发必须保持 Response 流，不调用 `.text()`、`.json()`、`.arrayB
 - 参数做类型和长度校验；
 - main 每个 handler 验证 `senderFrame` 是 `app://wenche` 主 frame。
 
-业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；它只用于桌面关于信息、更新状态和故障入口，使同一前端仍能由普通浏览器运行。
+业务页面不应依赖该对象完成阅读、导入、AI 或 RSS；`getAiEnvState`/`applyEnvAiConfig` 只向统一设置对话框的 AI 区段提供「环境变量 Key 可用/正在使用」的状态与一次性应用入口，不传输 Key 本身；`uninstallApp` 只用于统一设置对话框「关于与更新」区段的卸载入口；`getStorageInfo`/`cleanCache`/`relocateData` 只用于「数据」区段的占用管理与数据根迁移，迁移目标由 main 校验并会触发应用重启。统一设置对话框由 `public/settingsHub.js` 承载，本地文档侧栏「设置」、RSS 页脚「设置」、RSS 文章「更多」菜单与 AI 状态栏都打开同一实例，使同一前端仍能由普通浏览器运行。
 
 ## 13. `desktop/main.js`
 

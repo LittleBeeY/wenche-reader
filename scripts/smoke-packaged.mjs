@@ -1,6 +1,6 @@
 import asar from "@electron/asar";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -143,8 +143,13 @@ for (const [key, value] of Object.entries(expectedFuses)) {
 ok("fuses match the release contract");
 
 const runAsNode = await new Promise((resolve) => {
+  const isolatedRoot = mkdtempSync(path.join(tmpdir(), "wenche-runasnode-"));
   const child = spawn(exePath, ["-e", "console.log(1)"], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      LOCALAPPDATA: isolatedRoot
+    },
     stdio: ["ignore", "pipe", "pipe"]
   });
   let stderr = "";
@@ -154,6 +159,7 @@ const runAsNode = await new Promise((resolve) => {
   const timer = setTimeout(() => child.kill(), 15000);
   child.on("exit", (code) => {
     clearTimeout(timer);
+    rmSync(isolatedRoot, { recursive: true, force: true });
     resolve({ code, stderr });
   });
 });

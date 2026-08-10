@@ -39,6 +39,12 @@
 
 Squirrel 包 ID、`app.setAppUserModelId()`、快捷方式和 executableName 必须一致并通过安装测试。
 
+品牌显示名：
+
+- nupkg `<title>` 与 exe 的 `ProductName`/`FileDescription` 必须使用「文澈阅读」（Forge maker-squirrel 配置 `title` + `win32metadata`）；
+- 卸载列表、开始菜单快捷方式、任务栏与窗口标题使用中文品牌名；
+- 包 ID 与可执行文件名保持英文 `wenche_reader`/`WencheReader.exe`，避免路径和进程名引入非 ASCII 兼容问题。
+
 ## 2. 包内容
 
 生产包只包含：
@@ -336,6 +342,8 @@ Desktop E2E 不调用真实 AI 服务、不访问正式用户目录、不要求�
 - 中文 Windows 用户名、空格路径和非管理员用户可用；
 - Windows 防火墙不要求开放公网端口；
 - 关闭、卸载、重装后数据保留；
+- 卸载列表显示「文澈阅读」，开始菜单/桌面快捷方式为「文澈阅读」；
+- 应用内「卸载应用」入口可执行，确认后移除程序与快捷方式且保留数据目录；
 - 卸载不留下正在运行的 worker。
 
 正式签名构建另加 SmartScreen/Smart App Control 和 Authenticode 验证。

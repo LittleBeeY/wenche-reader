@@ -24,12 +24,13 @@
 | 首发平台 | Windows 10/11 x64；不同时实现 macOS、Linux、ARM64 |
 | 桌面运行时 | Electron 43 的最新非预发布补丁版，写入 `package.json` 时使用精确版本，不使用 `^` 或 `~` |
 | 打包工具 | Electron Forge，Squirrel.Windows 安装器 |
+| 安装位置 | Squirrel 固定安装到 `%LOCALAPPDATA%\wenche_reader`，不提供可选安装目录；改用 NSIS/MSIX 会失去自动更新 |
 | 前端 | 继续使用 `public/` 原生 ES modules，不引入 React、Vue、Vite 或新的前端构建层 |
 | 后端 | 继续使用 Express、`node:sqlite`、现有 provider adapter 和 RSS 服务 |
 | 进程隔离 | Electron main 负责可信桌面能力；Express、SQLite 和 RSS 调度器运行在一个 utility process 中 |
 | 页面来源 | 生产窗口加载 `app://wenche/`；静态资源由协议处理器从应用包读取，`/api/*` 代理到随机回环端口 |
 | 本地服务 | 只监听 `127.0.0.1:0`，由系统分配端口；所有请求都要求每次启动随机生成的会话令牌 |
-| 数据位置 | `%LOCALAPPDATA%\Wenche Reader`，不写安装目录或 `app.asar` |
+| 数据位置 | 默认 `%LOCALAPPDATA%\Wenche Reader`；data/uploads/cache/backups 可通过设置迁移到自定义目录，config/secrets/logs/session 留在固定引导根；不写安装目录或 `app.asar` |
 | AI 密钥 | 由 Electron main 使用 `safeStorage` 加密；不再把桌面版 Key 写入 `.env` |
 | Web/CLI 兼容 | `npm start`、`.env` 配置和现有浏览器测试必须继续工作 |
 | 更新 | Electron `autoUpdater` + Squirrel.Windows 静态更新源；不从私有 GitHub Release 给终端用户更新 |

@@ -1,5 +1,6 @@
 import { loadRssViewState, saveRssViewState } from "./rssState.js";
 import { bindDisclosureState } from "./disclosureState.js";
+import { closeSettings, openSettings } from "./settingsHub.js";
 
 const SCOPE_TITLES = {
   today: "今日精选",
@@ -49,7 +50,6 @@ export function initRssMode(host) {
     folderDialog: document.querySelector("#rss-folder-dialog"),
     folderDialogStatus: document.querySelector("#rss-folder-dialog-status"),
     newFolderName: document.querySelector("#rss-new-folder-name"),
-    prefsDialog: document.querySelector("#rss-prefs-dialog"),
     articleBar: document.querySelector("#rss-article-bar"),
     articleBack: document.querySelector("#rss-article-back"),
     articleMeta: document.querySelector("#rss-article-meta"),
@@ -1239,7 +1239,7 @@ export function initRssMode(host) {
       document.querySelector("#rss-prefs-auto-ai").checked = prefs.autoAiAnalysis;
       document.querySelector("#rss-prefs-explore").checked = prefs.exploreItem;
       document.querySelector("#rss-prefs-longform").checked = prefs.prefersLongForm;
-      els.prefsDialog.showModal();
+      openSettings("rss");
     } catch (error) {
       host.setStatus(error.message, true);
     }
@@ -1272,7 +1272,7 @@ export function initRssMode(host) {
           prefersLongForm: document.querySelector("#rss-prefs-longform").checked
         }
       });
-      els.prefsDialog.close();
+      closeSettings();
       host.setStatus("资讯设置已保存。");
       await loadNav();
     } catch (error) {
@@ -1425,7 +1425,7 @@ export function initRssMode(host) {
       createFolder();
     }
   });
-  document.querySelector("#rss-prefs-cancel").addEventListener("click", () => els.prefsDialog.close());
+  document.querySelector("#rss-prefs-cancel").addEventListener("click", closeSettings);
   document.querySelector("#rss-prefs-save").addEventListener("click", () => savePrefs());
   document.addEventListener("keydown", handleShortcut);
 

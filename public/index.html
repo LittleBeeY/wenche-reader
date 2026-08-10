@@ -253,31 +253,9 @@
               </div>
             </details>
 
-            <details class="sidebar-disclosure data-tools" aria-label="本地数据">
-              <summary>
-                <span>备份与恢复</span>
-              </summary>
-              <div class="sidebar-disclosure-body">
-                <button id="download-backup" type="button">下载备份</button>
-                <label class="restore-button" for="restore-backup">从备份恢复</label>
-                <input id="restore-backup" type="file" accept="application/json,.json" />
-              </div>
-            </details>
-
-            <details id="desktop-about" class="sidebar-disclosure desktop-only" hidden>
-              <summary>
-                <span>关于与更新</span>
-              </summary>
-              <div class="sidebar-disclosure-body desktop-about-body">
-                <p id="desktop-version"></p>
-                <p id="desktop-update-state"></p>
-                <div class="desktop-about-actions">
-                  <button id="desktop-check-updates" type="button">检查更新</button>
-                  <button id="desktop-install-update" type="button" hidden>重启并安装</button>
-                  <button id="desktop-open-logs" type="button">打开日志目录</button>
-                </div>
-              </div>
-            </details>
+            <button id="sidebar-settings-open" type="button" class="sidebar-command">
+              <span>设置</span>
+            </button>
           </div>
         </details>
       </aside>
@@ -408,6 +386,13 @@
                       <path d="M5 5l14 14M9.5 4.8A9.7 9.7 0 0 1 12 4c5.5 0 9 8 9 8a17 17 0 0 1-2.1 3.4M6.2 6.2C4.1 8 3 12 3 12s3.5 8 9 8a8.8 8.8 0 0 0 3.1-.6M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
                     </svg>
                     <span data-rss-action-label>减少此类推荐</span>
+                  </button>
+                  <button type="button" id="rss-open-settings" role="menuitem">
+                    <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.2 2.2-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3.2v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-2.2-2.2.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5v-3.2h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.2-2.2.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3.5h3.2v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.2 2.2-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.2V13h-.2a1.7 1.7 0 0 0-1.5 1Z"></path>
+                    </svg>
+                    <span>设置</span>
                   </button>
                 </div>
               </details>
@@ -704,77 +689,128 @@
       </form>
     </dialog>
 
-    <dialog id="rss-prefs-dialog" class="rss-dialog">
-      <form method="dialog">
-        <h2>资讯设置</h2>
-        <fieldset>
-          <legend>关注主题（每行一个，可带权重，如「Agent:1」）</legend>
-          <textarea id="rss-prefs-topics" rows="4" placeholder="AI 工程&#10;Agent:1&#10;深度阅读"></textarea>
-        </fieldset>
-        <fieldset>
-          <legend>屏蔽主题（每行一个）</legend>
-          <textarea id="rss-prefs-blocked-topics" rows="2"></textarea>
-        </fieldset>
-        <div class="rss-prefs-grid">
-          <label>每日精选数量
-            <input id="rss-prefs-brief-count" type="number" min="3" max="30" />
-          </label>
-          <label>默认刷新间隔（分钟）
-            <input id="rss-prefs-interval" type="number" min="15" max="1440" />
-          </label>
-        </div>
-        <label class="rss-prefs-check">
-          <input id="rss-prefs-show-unread" type="checkbox" />
-          显示未读数
-        </label>
-        <label class="rss-prefs-check">
-          <input id="rss-prefs-auto-ai" type="checkbox" />
-          自动进行 AI 初评（关闭后资讯仍可正常使用）
-        </label>
-        <label class="rss-prefs-check">
-          <input id="rss-prefs-explore" type="checkbox" />
-          今日精选中保留一条探索性内容
-        </label>
-        <label class="rss-prefs-check">
-          <input id="rss-prefs-longform" type="checkbox" />
-          偏好长文
-        </label>
-        <div class="dialog-actions">
-          <button value="cancel" type="button" id="rss-prefs-cancel">取消</button>
-          <button value="default" type="button" id="rss-prefs-save">保存设置</button>
-        </div>
-      </form>
-    </dialog>
+    <dialog id="settings-dialog" class="rss-dialog settings-dialog">
+      <div class="settings-dialog-header">
+        <h2>设置</h2>
+        <button id="settings-close" type="button" class="settings-close" data-settings-close aria-label="关闭设置">×</button>
+      </div>
+      <div class="settings-tabs" role="tablist" aria-label="设置分类">
+        <button type="button" role="tab" data-settings-tab="ai" aria-selected="true">AI 接口</button>
+        <button type="button" role="tab" data-settings-tab="rss" aria-selected="false">资讯</button>
+        <button type="button" role="tab" data-settings-tab="data" aria-selected="false">数据</button>
+        <button type="button" role="tab" data-settings-tab="about" aria-selected="false" class="desktop-only" hidden>关于与更新</button>
+      </div>
 
-    <dialog id="ai-settings-dialog" class="rss-dialog">
-      <form method="dialog">
-        <h2>AI 接口设置</h2>
-        <p class="rss-dialog-hint">选择 AI 接口并填写密钥，保存后立即生效，无需重启服务。</p>
-        <label class="ai-settings-field" for="ai-settings-provider">
-          <span>AI 接口</span>
-          <select id="ai-settings-provider"></select>
-          <small id="ai-settings-provider-hint" class="ai-settings-hint"></small>
-        </label>
-        <label class="ai-settings-field" for="ai-settings-key">
-          <span>API Key <small id="ai-settings-key-hint"></small></span>
-          <input id="ai-settings-key" type="password" autocomplete="off" placeholder="sk-…" />
-          <button id="ai-settings-clear-key" type="button" class="ai-settings-clear-key" hidden>清除已保存的 Key</button>
-        </label>
-        <label class="ai-settings-field" for="ai-settings-base">
-          <span>API 根地址（预设已带默认值，可留空）</span>
-          <input id="ai-settings-base" type="text" autocomplete="off" />
-        </label>
-        <label class="ai-settings-field" for="ai-settings-model">
-          <span>模型</span>
-          <input id="ai-settings-model" type="text" autocomplete="off" />
-        </label>
-        <div id="ai-settings-status" class="rss-dialog-status" role="status"></div>
-        <div class="dialog-actions">
-          <button value="cancel" type="button" id="ai-settings-cancel">取消</button>
-          <button type="button" id="ai-settings-test">测试连接</button>
-          <button type="button" id="ai-settings-save">保存设置</button>
+      <section id="settings-section-ai" class="settings-section" role="tabpanel" aria-label="AI 接口设置">
+        <form id="ai-settings-form" method="dialog">
+          <p class="rss-dialog-hint">选择 AI 接口并填写密钥，保存后立即生效，无需重启服务。</p>
+          <label class="ai-settings-field" for="ai-settings-provider">
+            <span>AI 接口</span>
+            <select id="ai-settings-provider"></select>
+            <small id="ai-settings-provider-hint" class="ai-settings-hint"></small>
+          </label>
+          <label class="ai-settings-field" for="ai-settings-key">
+            <span>API Key <small id="ai-settings-key-hint"></small></span>
+            <input id="ai-settings-key" type="password" autocomplete="off" placeholder="sk-…" />
+            <button id="ai-settings-clear-key" type="button" class="ai-settings-clear-key" hidden>清除已保存的 Key</button>
+          </label>
+          <div id="ai-settings-env" class="ai-settings-env" hidden>
+            <p id="ai-settings-env-text"></p>
+            <button id="ai-settings-use-env" type="button">使用环境变量 Key</button>
+          </div>
+          <label class="ai-settings-field" for="ai-settings-base">
+            <span>API 根地址（预设已带默认值，可留空）</span>
+            <input id="ai-settings-base" type="text" autocomplete="off" />
+          </label>
+          <label class="ai-settings-field" for="ai-settings-model">
+            <span>模型</span>
+            <input id="ai-settings-model" type="text" autocomplete="off" />
+          </label>
+          <div id="ai-settings-status" class="rss-dialog-status" role="status"></div>
+          <div class="dialog-actions">
+            <button value="cancel" type="button" id="ai-settings-cancel" data-settings-close>取消</button>
+            <button type="button" id="ai-settings-test">测试连接</button>
+            <button type="button" id="ai-settings-save">保存设置</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="settings-section-rss" class="settings-section" role="tabpanel" aria-label="资讯设置" hidden>
+        <form id="rss-prefs-form" method="dialog">
+          <fieldset>
+            <legend>关注主题（每行一个，可带权重，如「Agent:1」）</legend>
+            <textarea id="rss-prefs-topics" rows="4" placeholder="AI 工程&#10;Agent:1&#10;深度阅读"></textarea>
+          </fieldset>
+          <fieldset>
+            <legend>屏蔽主题（每行一个）</legend>
+            <textarea id="rss-prefs-blocked-topics" rows="2"></textarea>
+          </fieldset>
+          <div class="rss-prefs-grid">
+            <label>每日精选数量
+              <input id="rss-prefs-brief-count" type="number" min="3" max="30" />
+            </label>
+            <label>默认刷新间隔（分钟）
+              <input id="rss-prefs-interval" type="number" min="15" max="1440" />
+            </label>
+          </div>
+          <label class="rss-prefs-check">
+            <input id="rss-prefs-show-unread" type="checkbox" />
+            显示未读数
+          </label>
+          <label class="rss-prefs-check">
+            <input id="rss-prefs-auto-ai" type="checkbox" />
+            自动进行 AI 初评（关闭后资讯仍可正常使用）
+          </label>
+          <label class="rss-prefs-check">
+            <input id="rss-prefs-explore" type="checkbox" />
+            今日精选中保留一条探索性内容
+          </label>
+          <label class="rss-prefs-check">
+            <input id="rss-prefs-longform" type="checkbox" />
+            偏好长文
+          </label>
+          <div class="dialog-actions">
+            <button value="cancel" type="button" id="rss-prefs-cancel" data-settings-close>取消</button>
+            <button value="default" type="button" id="rss-prefs-save">保存设置</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="settings-section-data" class="settings-section" role="tabpanel" aria-label="数据备份与恢复" hidden>
+        <p class="rss-dialog-hint">备份包含文档、订阅、AI 记录与阅读设置，不包含 API Key。</p>
+        <div class="settings-data-actions">
+          <button id="download-backup" type="button">下载备份</button>
+          <label class="restore-button" for="restore-backup">从备份恢复</label>
+          <input id="restore-backup" type="file" accept="application/json,.json" />
         </div>
-      </form>
+        <div id="storage-usage" class="storage-usage desktop-only" hidden>
+          <h3>存储占用</h3>
+          <div id="storage-usage-rows" class="storage-usage-rows"></div>
+          <div id="storage-usage-total" class="storage-usage-total"></div>
+          <div class="storage-usage-actions">
+            <button id="storage-refresh" type="button">刷新</button>
+            <button id="storage-clean-rss-images" type="button">清理资讯图片缓存</button>
+            <button id="storage-clean-session" type="button">清理浏览缓存</button>
+          </div>
+        </div>
+        <div id="data-location" class="data-location desktop-only" hidden>
+          <h3>数据存储位置</h3>
+          <p id="data-location-path" class="data-location-path"></p>
+          <button id="data-location-change" type="button">更改位置…</button>
+          <p id="data-location-status" class="data-location-status" role="status"></p>
+        </div>
+      </section>
+
+      <section id="settings-section-about" class="settings-section" role="tabpanel" aria-label="关于与更新" hidden>
+        <p id="desktop-version"></p>
+        <p id="desktop-update-state"></p>
+        <div class="desktop-about-actions">
+          <button id="desktop-check-updates" type="button">检查更新</button>
+          <button id="desktop-install-update" type="button" hidden>重启并安装</button>
+          <button id="desktop-open-logs" type="button">打开日志目录</button>
+          <button id="desktop-uninstall" type="button">卸载应用</button>
+        </div>
+      </section>
     </dialog>
 
     <dialog id="annotation-dialog" class="annotation-dialog">
