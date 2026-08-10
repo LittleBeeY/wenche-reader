@@ -46,12 +46,29 @@ async function launchAt(root, extraEnv = {}) {
   return { app, page, root };
 }
 
+async function closeApp(app) {
+  let child;
+  try {
+    child = app.process();
+  } catch {
+    return;
+  }
+  await Promise.race([
+    app.close().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 10000))
+  ]);
+  if (child.exitCode === null) {
+    child.kill();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+}
+
 const test = base.extend({
   desktopApp: async ({}, use) => {
     const root = await mkdtemp(path.join(tmpdir(), "wenche-desktop-e2e-"));
     const launched = await launchAt(root);
     await use(launched);
-    await launched.app.close().catch(() => {});
+    await closeApp(launched.app);
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
 });
@@ -172,7 +189,7 @@ test("persists localStorage and library data across restart", async () => {
         body: JSON.stringify({ name: "persist.txt", contentBase64 })
       });
     }, base64);
-    await first.app.close();
+    await closeApp(first.app);
 
     const second = await launchAt(root);
     const secondPage = second.page;
@@ -184,7 +201,7 @@ test("persists localStorage and library data across restart", async () => {
       return (await response.json()).documents;
     });
     expect(documents.length).toBe(1);
-    await second.app.close();
+    await closeApp(second.app);
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
@@ -236,7 +253,7 @@ test("saves AI settings through safeStorage and keeps them across restart", asyn
     await firstPage.locator("#ai-status").click();
     await expect(firstPage.locator("#ai-settings-key-hint")).toContainText("已配置");
     await firstPage.locator("#ai-settings-cancel").click();
-    await first.app.close();
+    await closeApp(first.app);
 
     const second = await launchAt(root);
     const settings = await second.page.evaluate(async () => {
@@ -246,7 +263,7 @@ test("saves AI settings through safeStorage and keeps them across restart", asyn
     expect(settings.provider).toBe("openai");
     expect(settings.hasApiKey).toBe(true);
     expect(JSON.stringify(settings)).not.toContain("saved-secret-key");
-    await second.app.close();
+    await closeApp(second.app);
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
@@ -279,7 +296,7 @@ test("uses AI_API_KEY from the environment for the current session only", async 
     await expect(page.locator("#ai-settings-env")).toBeVisible();
     await expect(page.locator("#ai-settings-env-text")).toContainText("环境变量");
     await page.locator("#ai-settings-cancel").click();
-    await launched.app.close();
+    await closeApp(launched.app);
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
@@ -432,6 +449,28 @@ test("reports storage usage and cleans safe caches", async ({ desktopApp }) => {
   expect(after.entries.find((entry) => entry.key === "rss-images").size).toBe(0);
 });
 
+test("opens AI settings while startup data is still loading", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const url = String(args[0]);
+      if (url.includes("/api/documents")) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+      }
+      return originalFetch(...args);
+    };
+  });
+  await page.reload();
+  await page.waitForSelector("#ai-status");
+  await page.locator("#ai-status").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible({
+    timeout: 20000
+  });
+});
+
 test("relocates the data root and keeps documents readable", async () => {
   const rootA = await mkdtemp(path.join(tmpdir(), "wenche-relocate-a-"));
   const rootB = await mkdtemp(path.join(tmpdir(), "wenche-relocate-b-"));
@@ -456,7 +495,7 @@ test("relocates the data root and keeps documents readable", async () => {
       window.wencheDesktop.relocateData(target)
     , rootB);
     expect(relocated.ok).toBe(true);
-    await first.app.close().catch(() => {});
+    await closeApp(first.app);
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     const pointer = JSON.parse(
@@ -472,7 +511,7 @@ test("relocates the data root and keeps documents readable", async () => {
     });
     expect(documents.documents.length).toBe(1);
     expect(documents.documents[0].title).toBe("relocate.txt");
-    await second.app.close();
+    await closeApp(second.app);
   } finally {
     await rm(rootA, { recursive: true, force: true }).catch(() => {});
     await rm(rootB, { recursive: true, force: true }).catch(() => {});
@@ -502,7 +541,7 @@ test("shows the error page when the database state is inconsistent", async () =>
     await expect(launched.page.locator("#error-code")).toHaveText(
       "sqlite-inconsistent-state"
     );
-    await launched.app.close();
+    await closeApp(launched.app);
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }

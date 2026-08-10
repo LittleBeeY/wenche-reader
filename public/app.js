@@ -666,20 +666,25 @@ renderPanelState();
 applyReadingSettings();
 showAiView("analysis");
 initSettingsHub();
-await loadAiStatus();
-await loadDocumentList();
-const lastDocumentId = getLastDocumentId(window.localStorage);
-if (state.documents.some((document) => Number(document.id) === lastDocumentId)) {
-  await loadDocument(lastDocumentId);
-}
-if (coldStartCard) coldStartCard.hidden = Boolean(state.document);
-updatePaginationControls();
-updateSearchControls();
-try {
-  if (window.localStorage.getItem("wenche.sourceMode") === "rss") {
-    await setSourceMode("rss");
+
+// 启动数据加载不能放在模块顶层 await：那会挂起后续所有监听器注册，
+// 导致窗口已显示但点击（如 AI 接口设置）没有反应。改为末尾统一启动。
+async function initializeReader() {
+  await loadAiStatus();
+  await loadDocumentList();
+  const lastDocumentId = getLastDocumentId(window.localStorage);
+  if (state.documents.some((document) => Number(document.id) === lastDocumentId)) {
+    await loadDocument(lastDocumentId);
   }
-} catch {}
+  if (coldStartCard) coldStartCard.hidden = Boolean(state.document);
+  updatePaginationControls();
+  updateSearchControls();
+  try {
+    if (window.localStorage.getItem("wenche.sourceMode") === "rss") {
+      await setSourceMode("rss");
+    }
+  } catch {}
+}
 
 function renderPanelState() {
   const { leftCollapsed, rightCollapsed } = state.panels;
@@ -3190,3 +3195,5 @@ function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("is-error", isError);
 }
+
+void initializeReader();

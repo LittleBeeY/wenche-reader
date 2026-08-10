@@ -28,6 +28,7 @@ export default {
       /^\/test-results\//,
       /^\/playwright-report\//,
       /^\/out\//,
+      /^\/release\//,
       /^\/data\//,
       /^\/uploads\//,
       /^\/\.env/,
