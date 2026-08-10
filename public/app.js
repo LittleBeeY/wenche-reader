@@ -1136,13 +1136,15 @@ let aiSettingsHasKey = false;
 let aiSettingsClearKeyRequested = false;
 let aiSettingsEnvInUse = false;
 
-async function loadAiSettingsForm() {
-  aiSettingsStatus.textContent = "正在加载…";
+async function loadAiSettingsForm({ preserveInput = false } = {}) {
+  aiSettingsStatus.textContent = preserveInput ? "正在刷新…" : "正在加载…";
   aiSettingsStatus.classList.remove("is-error");
-  aiSettingsKey.value = "";
-  aiSettingsClearKeyRequested = false;
-  aiSettingsClearKey.disabled = false;
-  aiSettingsEnvInUse = false;
+  if (!preserveInput) {
+    aiSettingsKey.value = "";
+    aiSettingsClearKeyRequested = false;
+    aiSettingsClearKey.disabled = false;
+    aiSettingsEnvInUse = false;
+  }
   try {
     const settings = await readJson(await fetch("/api/ai/settings"));
     aiProviderOptions = settings.providers || [];
@@ -1153,7 +1155,15 @@ async function loadAiSettingsForm() {
       aiSettingsEnvInUse = envState.inUse === true;
       if (aiSettingsEnvInUse) aiSettingsHasKey = true;
     }
+    const previousProvider = aiSettingsProvider.value;
     fillProviderSelect(settings.provider);
+    if (
+      preserveInput &&
+      previousProvider &&
+      aiSettingsProvider.querySelector(`option[value="${previousProvider}"]`)
+    ) {
+      aiSettingsProvider.value = previousProvider;
+    }
     applyProviderDefaults(settings.provider);
     renderAiSettingsEnv(envState);
     if (settings.provider !== "mock") {
@@ -1319,7 +1329,7 @@ document.addEventListener("wenche:settings-section", (event) => {
     event.detail?.section === "ai" &&
     document.querySelector("#settings-dialog")?.open
   ) {
-    void loadAiSettingsForm();
+    void loadAiSettingsForm({ preserveInput: true });
   }
 });
 aiSettingsProvider.addEventListener("change", () => applyProviderDefaults(aiSettingsProvider.value));
