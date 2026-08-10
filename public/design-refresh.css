@@ -904,10 +904,13 @@ textarea::placeholder {
 
 .rss-dialog,
 .annotation-dialog {
-  background: var(--glass-fill-strong);
+  background: var(--surface-solid);
   border-color: var(--glass-stroke);
   box-shadow: var(--shadow);
   color: var(--ink);
+  /* 常驻合成层：避免 showModal 时新建表面在软渲染下闪黑帧 */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .rss-dialog::backdrop,
