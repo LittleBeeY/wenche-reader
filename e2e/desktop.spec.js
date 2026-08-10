@@ -471,6 +471,26 @@ test("opens AI settings while startup data is still loading", async ({
   });
 });
 
+test("populates the AI settings section when opened from the sidebar tab", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await page.locator('[data-settings-tab="ai"]').click();
+  await expect(page.locator("#settings-section-ai")).toBeVisible();
+  await expect
+    .poll(
+      async () => page.locator("#ai-settings-provider option").count(),
+      { timeout: 15000 }
+    )
+    .toBeGreaterThan(0);
+  expect(
+    await page.locator("#ai-settings-provider").isEnabled()
+  ).toBe(true);
+});
+
 test("relocates the data root and keeps documents readable", async () => {
   const rootA = await mkdtemp(path.join(tmpdir(), "wenche-relocate-a-"));
   const rootB = await mkdtemp(path.join(tmpdir(), "wenche-relocate-b-"));

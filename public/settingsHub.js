@@ -52,6 +52,7 @@ function activate(section) {
   }
   dialog?.dispatchEvent(
     new CustomEvent("wenche:settings-section", {
+      bubbles: true,
       detail: { section: visibleTab }
     })
   );

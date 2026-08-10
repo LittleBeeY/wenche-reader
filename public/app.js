@@ -1136,7 +1136,7 @@ let aiSettingsHasKey = false;
 let aiSettingsClearKeyRequested = false;
 let aiSettingsEnvInUse = false;
 
-async function openAiSettingsDialog() {
+async function loadAiSettingsForm() {
   aiSettingsStatus.textContent = "";
   aiSettingsStatus.classList.remove("is-error");
   aiSettingsKey.value = "";
@@ -1160,11 +1160,14 @@ async function openAiSettingsDialog() {
       if (settings.baseUrl) aiSettingsBase.value = settings.baseUrl;
       if (settings.model) aiSettingsModel.value = settings.model;
     }
-    openSettings("ai");
   } catch (error) {
     aiStatus.classList.add("is-warning");
     aiStatus.textContent = `AI 设置加载失败：${error.message}`;
   }
+}
+
+function openAiSettingsDialog() {
+  openSettings("ai");
 }
 
 function fillProviderSelect(currentProvider) {
@@ -1309,6 +1312,9 @@ aiStatus.addEventListener("keydown", (event) => {
   }
 });
 rssAiStatus?.addEventListener("click", openAiSettingsDialog);
+document.addEventListener("wenche:settings-section", (event) => {
+  if (event.detail?.section === "ai") void loadAiSettingsForm();
+});
 aiSettingsProvider.addEventListener("change", () => applyProviderDefaults(aiSettingsProvider.value));
 aiSettingsCancel.addEventListener("click", closeSettings);
 aiSettingsTest.addEventListener("click", testAiConnection);
