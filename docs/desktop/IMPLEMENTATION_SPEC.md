@@ -68,6 +68,7 @@ Squirrel 生命周期处理使用 `electron-squirrel-startup`，它同样属于�
   "start": "node src/cli.js",
   "desktop:dev": "electron-forge start",
   "desktop:make": "electron-forge make --platform=win32 --arch=x64",
+  "desktop:dist": "node scripts/desktop-dist.mjs",
   "test:desktop": "playwright test --config=playwright.desktop.config.js",
   "test:packaged": "node scripts/smoke-packaged.mjs"
 }

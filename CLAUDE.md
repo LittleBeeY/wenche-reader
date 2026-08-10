@@ -13,12 +13,15 @@ npm.cmd run test:e2e
 npm.cmd run test:desktop
 npm.cmd run desktop:dev
 npm.cmd run desktop:make
+npm.cmd run desktop:dist
 npm.cmd run test:packaged
 npm.cmd run open
 npm.cmd run config:ai
 ```
 
 运行环境需要 Node.js 22.13.0+。默认服务地址是 `http://localhost:3000`。
+
+本地桌面版构建统一用 `npm.cmd run desktop:dist`：ASCII 临时目录构建后自动把最终产物（Setup.exe/nupkg/RELEASES）回拷到 `<项目根>/release/`，规避 `rcedit` 不识别中文输出路径的问题；CI 继续用 `desktop:make`。
 
 ## 代码边界
 
