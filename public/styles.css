@@ -744,6 +744,7 @@ select:focus-visible {
   flex-direction: column;
   gap: 12px;
   margin-top: 10px;
+  min-height: 260px;
   overflow-y: auto;
 }
 
