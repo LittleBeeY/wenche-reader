@@ -49,6 +49,7 @@ scripts\open-reader.cmd
 - AI Key 保存在 `secrets/ai-key.bin`（safeStorage 加密），不再写入 `.env`；升级后 Key 仍可用但页面不回显。
 - 若启动前已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会作为当前会话的 Key 自动使用、不落盘；AI 设置对话框会显示来源并可随时改用保存的 Key。修改环境变量后需重启应用生效。
 - 排障：清空 `cache/` 不会丢数据；`data/`、`uploads/`、`config/`、`secrets/`、`backups/` 不要手动删除；卸载不会删除 `%LOCALAPPDATA%\Wenche Reader`。
+- 调试时若弹出「应用程序发生异常 unknown software exception (0x80000003)」：这是软件渲染下 Chromium 子进程断点异常的 Windows 弹窗。`npm.cmd run desktop:dev` 已通过 `ELECTRON_DEFAULT_ERROR_MODE=1` 抑制（main 也会为 utility 子进程设置）；打包版如需抑制，需在启动环境中设置同名变量。
 
 ## 配置 AI 接口（应用内）
 

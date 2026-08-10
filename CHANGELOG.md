@@ -17,6 +17,7 @@
 - 「数据」区段新增存储占用管理与缓存清理：显示 data/uploads/资讯图片缓存/备份/浏览缓存大小，可一键清理 `cache/rss-images` 与浏览缓存。
 - 数据根支持迁移到自定义位置：「设置 → 数据 → 更改位置」把 data/uploads/cache/backups 搬到其他磁盘（含 SQLite 路径事务改写、跨盘复制、失败回滚与 `data-location.json` 指针），`config/secrets/logs/session` 留在固定引导根；顺带修复备份清理函数因缺少 `readdir` 导入而静默失效的问题。
 - 检查更新在未配置更新源时明确提示「更新未启用（未配置更新源，正式发布后可用）」，不再笼统显示「当前无法检查更新」。
+- 开发启动抑制 Windows 未处理异常弹窗：`desktop:dev` 注入 `ELECTRON_DEFAULT_ERROR_MODE=1`，软件渲染下的 0x80000003 断点异常不再弹框。
 
 ## [1.1.0] - 2026-08-06
 

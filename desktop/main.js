@@ -53,6 +53,11 @@ const SHUTDOWN_TIMEOUT_MS = 5000;
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 const LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// 抑制 Windows 未处理异常弹窗（0x80000003 断点异常）：
+// 软件渲染下 Chromium 子进程断言会触发该弹窗，ELECTRON_DEFAULT_ERROR_MODE=1
+// 让 Windows 直接结束进程而不弹框。utility 子进程会继承本设置。
+process.env.ELECTRON_DEFAULT_ERROR_MODE = "1";
+
 if (squirrelStartup) app.quit();
 
 registerAppScheme();
