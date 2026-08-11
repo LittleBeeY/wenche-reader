@@ -23,6 +23,7 @@ const TOP_LEVEL_EXCLUDES = [
   /^\/data($|\/)/,
   /^\/uploads($|\/)/,
   /^\/\.env($|\/)/,
+  /^\/\.env\.example$/,
   /^\/\.gitignore($|\/)/,
   /^\/\.npmrc($|\/)/,
   /^\/\.editorconfig($|\/)/,
