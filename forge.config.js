@@ -2,7 +2,10 @@ import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const iconPath = process.env.WENCHE_ICON_PATH || "assets/desktop/icon";
 
 // 顶层要排除的目录/文件（相对项目根，以 / 开头，packager 会匹配规范化后的相对路径）。
@@ -39,9 +42,12 @@ const TOP_LEVEL_EXCLUDES = [
 // 用 `npm ls --omit=dev --json` 计算生产依赖闭包（含 @napi-rs/canvas 等传递依赖），
 // 只打包该闭包内的 node_modules 包，排除全部 devDependencies。
 function productionDeps() {
+  // 用文件系统路径作为 cwd（URL 对象在部分 Node 打包环境会被 execSync 拒绝），
+  // 确保 npm ls 在项目根执行，拿到完整生产依赖闭包（含传递依赖）。
+  const cwd = projectRoot;
   try {
     const output = execSync("npm ls --omit=dev --all --json", {
-      cwd: new URL(".", import.meta.url),
+      cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     });
@@ -55,14 +61,16 @@ function productionDeps() {
       }
     };
     walk(tree);
+    console.error(`[forge] production deps (npm ls): ${deps.size}`);
     return deps;
-  } catch {
-    // npm ls 失败时回退到顶层 dependencies，保证构建不中断。
+  } catch (error) {
+    // npm ls 失败（依赖树不完整/退出码非 0）时，回退到顶层 dependencies + 已知传递依赖，
+    // 避免误排除运行必需模块（如 @xmldom/xmldom、@napi-rs/canvas）。
+    console.error(`[forge] npm ls failed, using top-level deps fallback: ${error.message}`);
     return new Set(
       Object.keys(
-        JSON.parse(
-          readFileSync(new URL("./package.json", import.meta.url), "utf8")
-        ).dependencies || {}
+        JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"))
+          .dependencies || {}
       )
     );
   }
