@@ -79,12 +79,14 @@ npm.cmd start
 
 面向 Windows 10/11 x64 的桌面发行版（无需安装 Node.js）：
 
-- 双击 `WencheReader-Setup.exe` 完成安装，从开始菜单或桌面快捷方式启动；
+- **首次安装**：双击 `WencheReader-Setup.exe`，安装完成后会自动在桌面和开始菜单创建「文澈阅读」快捷方式；
+- **日常启动**：从**桌面快捷方式**或**开始菜单 → 文澈阅读**启动。`WencheReader-Setup.exe` 是一次性安装器，安装完成后请不要再运行它（重复运行只会触发 Squirrel 的安装逻辑并直接退出，不会打开应用）；
+- 如果快捷方式丢失，可到安装目录 `%LOCALAPPDATA%\wenche_reader\` 直接双击 `WencheReader.exe` 启动；
 - 阅读数据保存在 `%LOCALAPPDATA%\Wenche Reader`，卸载不会删除用户数据；
 - 「设置 → 数据」可查看存储占用、清理资讯图片/浏览缓存，并支持把数据根迁移到其他磁盘（迁移后自动重启，阅读数据完整保留）；
 - 侧栏「更多 → 设置」（RSS 页脚或 RSS 文章「更多」菜单的「设置」打开同一个对话框）统一管理：AI 接口、资讯偏好、数据备份与恢复、关于与更新（版本、更新、日志、卸载）；
 - 卸载入口也会同时卸载开始菜单/桌面快捷方式与程序文件；阅读数据保留在本地数据目录；
-- 启动应用前若已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会把它作为当前会话的 Key 自动使用、不会写入本机；AI 设置对话框中也会显示 Key 来源，可随时改用保存的 Key；
+- 启动应用前若已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会把它作为当前会话的 Key 自动使用、不会写入本机；`AI_API_KEY` 缺失时也自动识别 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY` 等常见别名；AI 设置对话框中也会显示 Key 来源变量名，可随时改用保存的 Key；
 - 源码启动方式继续保留：`npm.cmd start`，桌面开发用 `npm.cmd run desktop:dev`。
 
 ## 配置 AI
@@ -98,6 +100,8 @@ npm.cmd start
 3. 点击「测试连接」验证，再点「保存设置」。
 
 保存后立即生效，无需重启服务。已保存的 Key 不会回显在页面上，留空保存表示保持不变。
+
+如果启动服务时进程环境已设置 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），源码版与桌面版行为一致：自动把环境变量作为当前会话的 Key 使用，不写入 `.env`，设置对话框会显示“当前 Key 来自环境变量”，留空保存也不会落盘。`AI_API_KEY` 缺失时还会自动识别 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY` 等常见别名变量名（按当前 provider 优先匹配，见 `src/lib/aiEnvKeys.js`），设置对话框会显示实际来源变量名。同时存在多个 Key 变量时，对话框提供下拉框让用户选择用哪个（默认自动匹配）：桌面版切换即生效，源码版保存后生效，均为当前会话、不落盘。
 
 配置信息存放在项目根目录的 `.env` 中，也可以手动编辑。`AI_PROVIDER` 可以是厂商预设名，预设会自动带入根地址与默认模型，`AI_API_BASE` 和 `AI_MODEL` 可覆盖：
 

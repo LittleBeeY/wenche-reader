@@ -53,6 +53,7 @@ npm.cmd run config:ai
 - SQLite schema 变化必须兼容现有数据库，并补迁移测试。
 - 备份必须排除 `.env` 和 API Key；恢复数据库提交成功后不得再删除新恢复文件。
 - AI 业务代码只依赖 provider adapter；不要把 DeepSeek 或其他厂商逻辑散落到路由和前端。
+- 环境变量 Key 别名表在 `src/lib/aiEnvKeys.js`（Web 与桌面共用）：新增 provider 预设或常见 Key 变量名时，必须同步 `AI_KEY_ENV_ALIASES` 与 `AI_KEY_ENV_FALLBACK_ORDER`（`AI_KEY_ENV_NAMES` 由两者自动合并），并补测试；服务端与桌面端只接受白名单内的 Key 变量名。
 - AI 流式输出继续使用 provider adapter；完整回答结束后才写入历史，引用定位只能使用上下文中真实存在的页码或段落标记。
 - 直接解析、深入解析和自定义问题必须保持不同提示词结构并基于原文；直接解析和深入解析都只解释文字意思，深入解析比直接解析更完整，不添加其他分析栏目。
 - 侧栏开合和阅读排版设置保存在浏览器本地；划词 AI 操作必须自动展开右侧面板。
@@ -63,7 +64,7 @@ npm.cmd run config:ai
 | 变量 | 用途 |
 | --- | --- |
 | `AI_PROVIDER` | 预设名（`deepseek`/`openai`/`kimi`/`zhipu`/`qwen`/`ollama`/`anthropic`/`gemini`）、传输层类型（`openai-compatible`/`anthropic`/`gemini`）或 `mock`；预设自动带入默认根地址与模型 |
-| `AI_API_KEY` | 模型密钥（Ollama 等本地服务可留空） |
+| `AI_API_KEY` | 模型密钥（Ollama 等本地服务可留空）。缺失时自动识别 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY`/`MOONSHOT_API_KEY`/`ZHIPUAI_API_KEY`/`DASHSCOPE_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`GOOGLE_API_KEY` 等常见别名，优先匹配当前 provider；同时存在多个可用 Key 变量时，设置对话框提供下拉框让用户选择（均仅当前会话、不落盘）。见 `src/lib/aiEnvKeys.js` |
 | `AI_API_BASE` | API 根地址，可覆盖预设默认值 |
 | `AI_MODEL` | 模型标识，可覆盖预设默认值 |
 | `PORT` | HTTP 端口，默认 `3000` |

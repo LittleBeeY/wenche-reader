@@ -541,6 +541,8 @@ export class RssService {
       total: preferences.dailyBriefCount || 10,
       exploreItem: preferences.exploreItem !== false
     });
+    // 没有可选条目时不保存空 brief，避免前端显示「今日精选横幅 + 空列表」。
+    if (selection.length === 0) return null;
     return this.storage.saveRssBrief({
       briefDate,
       generatedAt: new Date().toISOString(),
@@ -554,10 +556,10 @@ export class RssService {
   getTodayBrief() {
     const brief = this.storage.getRssBrief(new Date().toISOString().slice(0, 10));
     if (!brief) return null;
-    return {
-      ...brief,
-      entries: brief.entries.filter((item) => hasSubstantialContent(item.entry))
-    };
+    const entries = brief.entries.filter((item) => hasSubstantialContent(item.entry));
+    // 过滤后没有可读条目时视为「未生成」，前端显示可引导用户立即生成。
+    if (entries.length === 0) return null;
+    return { ...brief, entries };
   }
 
   // ---------- OPML ----------

@@ -142,6 +142,7 @@ const prevPageButton = document.querySelector("#prev-page");
 const nextPageButton = document.querySelector("#next-page");
 const pageIndicator = document.querySelector("#page-indicator");
 const aiStatus = document.querySelector("#ai-status");
+const aiStatusEnvSwitch = document.querySelector("#ai-status-env-switch");
 const rssAiStatus = document.querySelector("#rss-ai-status");
 const aiSettingsProvider = document.querySelector("#ai-settings-provider");
 const aiSettingsProviderHint = document.querySelector("#ai-settings-provider-hint");
@@ -150,6 +151,7 @@ const aiSettingsKeyHint = document.querySelector("#ai-settings-key-hint");
 const aiSettingsClearKey = document.querySelector("#ai-settings-clear-key");
 const aiSettingsEnv = document.querySelector("#ai-settings-env");
 const aiSettingsEnvText = document.querySelector("#ai-settings-env-text");
+const aiSettingsEnvSelect = document.querySelector("#ai-settings-env-select");
 const aiSettingsUseEnv = document.querySelector("#ai-settings-use-env");
 const aiSettingsBase = document.querySelector("#ai-settings-base");
 const aiSettingsModel = document.querySelector("#ai-settings-model");
@@ -1095,7 +1097,7 @@ function updatePanelToggle(button, options) {
   }
 }
 
-function updateAiStatusSurfaces(status) {
+function updateAiStatusSurfaces(status, envState = null) {
   aiStatus.classList.toggle("is-warning", !status.configured);
   if (status.provider === "mock") {
     aiStatus.textContent = "AI 接口：Mock 模式，点击配置真实模型。";
@@ -1103,6 +1105,20 @@ function updateAiStatusSurfaces(status) {
     aiStatus.textContent = status.configured
       ? `AI 接口：${status.provider} 已配置，模型 ${status.model}`
       : `AI 接口：${status.provider} 未配置完整，点击配置。`;
+  }
+  // 已保存 Key 生效、但环境变量也存在 Key 时，提示可一键切到环境变量（仅桌面版）。
+  const showEnvSwitch =
+    Boolean(window.wencheDesktop) &&
+    status.provider !== "mock" &&
+    envState?.available === true &&
+    envState?.inUse !== true;
+  if (aiStatusEnvSwitch) {
+    aiStatusEnvSwitch.hidden = !showEnvSwitch;
+    if (showEnvSwitch) {
+      const envName = envState?.keyEnvName || "环境变量";
+      aiStatusEnvSwitch.textContent =
+        `当前用已保存 Key；检测到 ${envName}，点击切换到环境变量（仅当前会话）`;
+    }
   }
   if (rssAiStatus) {
     const summary = status.provider === "mock"
@@ -1116,11 +1132,18 @@ function updateAiStatusSurfaces(status) {
   }
 }
 
+let latestAiEnvState = null;
+
 async function loadAiStatus() {
   try {
-    const response = await fetch("/api/ai/status");
-    const status = await readJson(response);
-    updateAiStatusSurfaces(status);
+    const [status, envState] = await Promise.all([
+      fetch("/api/ai/status").then(readJson),
+      window.wencheDesktop
+        ? window.wencheDesktop.getAiEnvState()
+        : Promise.resolve(null)
+    ]);
+    latestAiEnvState = envState;
+    updateAiStatusSurfaces(status, envState);
   } catch (error) {
     aiStatus.classList.add("is-warning");
     aiStatus.textContent = `AI 接口检查失败：${error.message}`;
@@ -1135,6 +1158,7 @@ let aiProviderOptions = [];
 let aiSettingsHasKey = false;
 let aiSettingsClearKeyRequested = false;
 let aiSettingsEnvInUse = false;
+let aiSettingsEnvKeyChoice = "";
 
 async function loadAiSettingsForm({ preserveInput = false } = {}) {
   aiSettingsStatus.textContent = preserveInput ? "正在刷新…" : "正在加载…";
@@ -1144,17 +1168,26 @@ async function loadAiSettingsForm({ preserveInput = false } = {}) {
     aiSettingsClearKeyRequested = false;
     aiSettingsClearKey.disabled = false;
     aiSettingsEnvInUse = false;
+    aiSettingsEnvKeyChoice = "";
   }
   try {
     const settings = await readJson(await fetch("/api/ai/settings"));
     aiProviderOptions = settings.providers || [];
     aiSettingsHasKey = Boolean(settings.hasApiKey);
-    let envState = { available: false, inUse: false };
+    let envState = { available: false, inUse: false, keyEnvName: "", keyEnvOptions: [] };
     if (window.wencheDesktop) {
       envState = await window.wencheDesktop.getAiEnvState();
-      aiSettingsEnvInUse = envState.inUse === true;
-      if (aiSettingsEnvInUse) aiSettingsHasKey = true;
+    } else {
+      envState = {
+        available: settings.envKeyAvailable === true,
+        inUse: settings.envKeyInUse === true,
+        keyEnvName: settings.envKeyName || "",
+        keyEnvOptions: settings.envKeyOptions || []
+      };
     }
+    aiSettingsEnvInUse = envState.inUse === true;
+    if (aiSettingsEnvInUse) aiSettingsHasKey = true;
+    if (!aiSettingsEnvKeyChoice) aiSettingsEnvKeyChoice = envState.keyEnvName || "";
     const previousProvider = aiSettingsProvider.value;
     fillProviderSelect(settings.provider);
     if (
@@ -1214,26 +1247,53 @@ function applyProviderDefaults(selectedKey) {
 }
 
 function renderAiSettingsEnv(envState) {
-  if (!aiSettingsEnv || !window.wencheDesktop) {
-    if (aiSettingsEnv) aiSettingsEnv.hidden = true;
-    return;
-  }
+  if (!aiSettingsEnv) return;
   const available = envState.available === true;
   const inUse = envState.inUse === true;
-  aiSettingsEnv.hidden = !available && !inUse;
-  if (!available && !inUse) return;
-  aiSettingsEnvText.textContent = inUse
-    ? "当前 Key 来自环境变量（仅当前会话，不保存到本机）"
-    : "检测到环境变量 AI_API_KEY（仅当前会话，不会保存到本机）";
-  aiSettingsUseEnv.hidden = inUse;
+  const options = Array.isArray(envState.keyEnvOptions) ? envState.keyEnvOptions : [];
+  const envName = envState.keyEnvName || "AI_API_KEY";
+  fillEnvKeySelect(options, aiSettingsEnvKeyChoice || envName);
+  const showSelect = available && options.length > 1;
+  aiSettingsEnvSelect.hidden = !showSelect;
+  aiSettingsEnvSelect.disabled = !showSelect;
+  if (inUse) {
+    aiSettingsEnv.hidden = false;
+    aiSettingsEnvText.textContent = `当前 Key 来自环境变量 ${envName}（仅当前会话，不保存到本机）`;
+    aiSettingsUseEnv.hidden = true;
+    return;
+  }
+  if (available) {
+    aiSettingsEnv.hidden = false;
+    aiSettingsEnvText.textContent = showSelect
+      ? "检测到多个环境变量 Key，可在下方选择（仅当前会话，不会保存到本机）"
+      : `检测到环境变量 ${envName}（仅当前会话，不会保存到本机）`;
+    aiSettingsUseEnv.hidden = !window.wencheDesktop;
+    return;
+  }
+  aiSettingsEnv.hidden = true;
 }
 
-async function useEnvAiKey() {
+function fillEnvKeySelect(options, currentName) {
+  aiSettingsEnvSelect.innerHTML = "";
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "自动（按接口匹配）";
+  aiSettingsEnvSelect.appendChild(auto);
+  for (const name of options) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    aiSettingsEnvSelect.appendChild(option);
+  }
+  aiSettingsEnvSelect.value = options.includes(currentName) ? currentName : "";
+}
+
+async function useEnvAiKey(envKeyName = "") {
   if (!window.wencheDesktop) return;
   aiSettingsUseEnv.disabled = true;
   aiSettingsStatus.textContent = "正在应用环境变量 Key…";
   try {
-    const result = await window.wencheDesktop.applyEnvAiConfig();
+    const result = await window.wencheDesktop.applyEnvAiConfig(envKeyName);
     if (!result?.accepted) {
       aiSettingsStatus.textContent = "无法应用环境变量 Key";
       aiSettingsStatus.classList.add("is-error");
@@ -1241,6 +1301,8 @@ async function useEnvAiKey() {
     }
     aiSettingsEnvInUse = true;
     aiSettingsHasKey = true;
+    const envState = await window.wencheDesktop.getAiEnvState();
+    aiSettingsEnvKeyChoice = envState.keyEnvName || "";
     // 环境变量配置可能带自己的 provider/baseUrl/model，应用后重新读取，
     // 避免对话框仍显示旧的已保存配置。
     const settings = await readJson(await fetch("/api/ai/settings"));
@@ -1250,7 +1312,7 @@ async function useEnvAiKey() {
       if (settings.baseUrl) aiSettingsBase.value = settings.baseUrl;
       if (settings.model) aiSettingsModel.value = settings.model;
     }
-    renderAiSettingsEnv({ available: true, inUse: true });
+    renderAiSettingsEnv(envState);
     aiSettingsKeyHint.textContent = "已配置（环境变量，留空保持不变）";
     aiSettingsClearKey.hidden = true;
     aiSettingsStatus.textContent = "已应用环境变量 Key（仅当前会话，不保存到本机）";
@@ -1269,7 +1331,9 @@ async function saveAiSettings() {
     apiKey: aiSettingsKey.value,
     baseUrl: aiSettingsBase.value,
     model: aiSettingsModel.value,
-    clearKey: aiSettingsClearKeyRequested
+    clearKey: aiSettingsClearKeyRequested,
+    // 桌面版通过 applyEnvAiConfig 实时应用选择，这里只让 Web 版把选择带给服务端。
+    envKeyName: window.wencheDesktop ? "" : aiSettingsEnvKeyChoice
   };
   aiSettingsSave.disabled = true;
   aiSettingsStatus.textContent = "正在保存…";
@@ -1295,7 +1359,8 @@ async function testAiConnection() {
     provider: aiSettingsProvider.value,
     apiKey: aiSettingsKey.value,
     baseUrl: aiSettingsBase.value,
-    model: aiSettingsModel.value
+    model: aiSettingsModel.value,
+    envKeyName: window.wencheDesktop ? "" : aiSettingsEnvKeyChoice
   };
   aiSettingsTest.disabled = true;
   aiSettingsStatus.textContent = "正在测试连接…";
@@ -1324,6 +1389,9 @@ aiStatus.addEventListener("keydown", (event) => {
   }
 });
 rssAiStatus?.addEventListener("click", openAiSettingsDialog);
+aiStatusEnvSwitch?.addEventListener("click", () => {
+  void useEnvAiKey(latestAiEnvState?.keyEnvName || "");
+});
 document.addEventListener("wenche:settings-section", (event) => {
   if (
     event.detail?.section === "ai" &&
@@ -1336,7 +1404,18 @@ aiSettingsProvider.addEventListener("change", () => applyProviderDefaults(aiSett
 aiSettingsCancel.addEventListener("click", closeSettings);
 aiSettingsTest.addEventListener("click", testAiConnection);
 aiSettingsSave.addEventListener("click", saveAiSettings);
-aiSettingsUseEnv?.addEventListener("click", useEnvAiKey);
+aiSettingsUseEnv?.addEventListener("click", () => useEnvAiKey(aiSettingsEnvSelect.value));
+aiSettingsEnvSelect?.addEventListener("change", () => {
+  const selected = aiSettingsEnvSelect.value;
+  aiSettingsEnvKeyChoice = selected;
+  if (window.wencheDesktop) {
+    void useEnvAiKey(selected);
+  } else {
+    aiSettingsStatus.textContent = selected
+      ? `已选择环境变量 ${selected}，保存后生效（仅当前会话，不落盘）`
+      : "已切换为自动匹配，保存后生效";
+  }
+});
 aiSettingsClearKey.addEventListener("click", () => {
   aiSettingsClearKeyRequested = true;
   aiSettingsKey.value = "";

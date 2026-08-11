@@ -3,13 +3,28 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  AI_KEY_ENV_ALIASES,
+  AI_KEY_ENV_FALLBACK_ORDER
+} from "../src/lib/aiEnvKeys.js";
 import { createApp } from "../src/server.js";
 import { consumeEventStream } from "../public/aiStream.js";
 
-const AI_ENV_KEYS = ["AI_PROVIDER", "AI_API_KEY", "AI_API_BASE", "AI_MODEL"];
+const AI_ENV_KEYS = [
+  "AI_PROVIDER",
+  "AI_API_KEY",
+  "AI_API_BASE",
+  "AI_MODEL",
+  ...new Set([
+    ...Object.values(AI_KEY_ENV_ALIASES).flat(),
+    ...AI_KEY_ENV_FALLBACK_ORDER
+  ])
+];
 
 function restoreAiEnv(t) {
   const saved = Object.fromEntries(AI_ENV_KEYS.map((key) => [key, process.env[key]]));
+  // 测试开始前清理全部 AI 环境变量，避免本机已有的别名变量（如 OPENAI_API_KEY）污染断言。
+  for (const key of AI_ENV_KEYS) delete process.env[key];
   t.after(() => {
     for (const key of AI_ENV_KEYS) {
       if (saved[key] === undefined) delete process.env[key];
@@ -109,6 +124,9 @@ test("lists AI provider options without exposing the saved key", async (t) => {
 
   assert.equal(settings.provider, "mock");
   assert.equal(settings.hasApiKey, false);
+  assert.equal(settings.envKeyAvailable, false);
+  assert.equal(settings.envKeyInUse, false);
+  assert.deepEqual(settings.envKeyOptions, []);
   assert.ok(!("apiKey" in settings));
   assert.ok(Array.isArray(settings.providers));
   const keys = settings.providers.map((item) => item.key);
@@ -195,6 +213,92 @@ test("keeps the saved API key when the submitted key is empty", async (t) => {
   assert.equal(saved.model, "deepseek-chat");
   assert.equal(saved.hasApiKey, true);
   assert.match(await readFile(envPath, "utf8"), /AI_API_KEY=keep-me/);
+});
+
+test("uses the process env key as a session-only fallback without persisting it", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  process.env.AI_PROVIDER = "deepseek";
+  process.env.AI_API_KEY = "env-secret";
+  const baseUrl = await withTestServer(t, { envPath });
+
+  const settings = await (await fetch(`${baseUrl}/api/ai/settings`)).json();
+  assert.equal(settings.hasApiKey, true);
+  assert.equal(settings.envKeyAvailable, true);
+  assert.equal(settings.envKeyInUse, true);
+  assert.equal(settings.envKeyName, "AI_API_KEY");
+  assert.deepEqual(settings.envKeyOptions, ["AI_API_KEY"]);
+  assert.ok(!("apiKey" in settings));
+
+  // 留空 Key 保存：环境变量 Key 继续生效，但不写入 .env
+  const save = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "deepseek", apiKey: "", model: "deepseek-chat" })
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.hasApiKey, true);
+  const envText = await readFile(envPath, "utf8");
+  assert.match(envText, /AI_PROVIDER=deepseek/);
+  assert.doesNotMatch(envText, /AI_API_KEY=/);
+});
+
+test("recognizes common key env names such as DEEPSEEK_API_KEY", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  process.env.AI_PROVIDER = "deepseek";
+  process.env.DEEPSEEK_API_KEY = "sk-alias-secret";
+  const baseUrl = await withTestServer(t, { envPath });
+
+  const settings = await (await fetch(`${baseUrl}/api/ai/settings`)).json();
+  assert.equal(settings.hasApiKey, true);
+  assert.equal(settings.envKeyAvailable, true);
+  assert.equal(settings.envKeyInUse, true);
+  assert.equal(settings.envKeyName, "DEEPSEEK_API_KEY");
+  assert.ok(!("apiKey" in settings));
+});
+
+test("lets the user pick which env key to use for the current session", async (t) => {
+  restoreAiEnv(t);
+  const root = await mkdtemp(path.join(tmpdir(), "ai-settings-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const envPath = path.join(root, ".env");
+  process.env.AI_PROVIDER = "deepseek";
+  process.env.DEEPSEEK_API_KEY = "sk-deepseek";
+  process.env.OPENAI_API_KEY = "sk-openai";
+  const baseUrl = await withTestServer(t, { envPath });
+
+  // 两个变量都可用，默认按 provider 用 deepseek 的 Key
+  const settings = await (await fetch(`${baseUrl}/api/ai/settings`)).json();
+  assert.equal(settings.envKeyName, "DEEPSEEK_API_KEY");
+  assert.deepEqual(settings.envKeyOptions, ["OPENAI_API_KEY", "DEEPSEEK_API_KEY"]);
+
+  // 用户显式选择 OPENAI_API_KEY：会话切到该 Key，且不写入 .env
+  const save = await fetch(`${baseUrl}/api/ai/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "deepseek",
+      apiKey: "",
+      model: "deepseek-chat",
+      envKeyName: "OPENAI_API_KEY"
+    })
+  });
+  assert.equal(save.status, 200);
+  const saved = await save.json();
+  assert.equal(saved.hasApiKey, true);
+  assert.doesNotMatch(await readFile(envPath, "utf8"), /AI_API_KEY=/);
 });
 
 test("rejects unknown AI providers when saving settings", async (t) => {

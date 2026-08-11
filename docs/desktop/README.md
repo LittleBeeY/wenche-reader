@@ -25,6 +25,7 @@
 | 桌面运行时 | Electron 43 的最新非预发布补丁版，写入 `package.json` 时使用精确版本，不使用 `^` 或 `~` |
 | 打包工具 | Electron Forge，Squirrel.Windows 安装器 |
 | 安装位置 | Squirrel 固定安装到 `%LOCALAPPDATA%\wenche_reader`，不提供可选安装目录；改用 NSIS/MSIX 会失去自动更新 |
+| 启动方式 | `WencheReader-Setup.exe` 是一次性安装器，装完自动创建桌面与开始菜单「文澈阅读」快捷方式；日常从快捷方式或 `%LOCALAPPDATA%\wenche_reader\WencheReader.exe` 启动，重复运行 Setup.exe 只触发安装逻辑并退出 |
 | 前端 | 继续使用 `public/` 原生 ES modules，不引入 React、Vue、Vite 或新的前端构建层 |
 | 后端 | 继续使用 Express、`node:sqlite`、现有 provider adapter 和 RSS 服务 |
 | 进程隔离 | Electron main 负责可信桌面能力；Express、SQLite 和 RSS 调度器运行在一个 utility process 中 |

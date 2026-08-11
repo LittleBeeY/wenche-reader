@@ -11,6 +11,7 @@ export class RssScheduler {
     this.timer = null;
     this.startupTimer = null;
     this.ticking = false;
+    this.lastBriefDate = "";
   }
 
   start() {
@@ -30,10 +31,27 @@ export class RssScheduler {
     try {
       await this.rssService.refreshDueFeeds({ concurrency: this.concurrency });
       await this.rssService.runAutoAnalysis({ limit: 5 });
+      await this.ensureTodayBrief();
     } catch (error) {
       console.error("[rss] scheduler tick failed:", error.message);
     } finally {
       this.ticking = false;
+    }
+  }
+
+  /**
+   * 每天自动生成一次今日精选：仅当日期变化且当天尚未成功生成时执行。
+   * 生成成功（或当天已有精选）后记录日期；无候选或失败时不记录，
+   * 下个 tick 会继续尝试，直到当天产出精选。
+   */
+  async ensureTodayBrief() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.lastBriefDate === today) return;
+    try {
+      const brief = await this.rssService.generateTodayBrief();
+      if (brief) this.lastBriefDate = today;
+    } catch (error) {
+      console.error("[rss] daily brief generation failed:", error.message);
     }
   }
 

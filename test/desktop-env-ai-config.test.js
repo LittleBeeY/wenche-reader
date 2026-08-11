@@ -6,11 +6,18 @@ import {
   readEnvAiConfig
 } from "../desktop/envAiConfig.js";
 
-test("readEnvAiConfig returns unavailable when AI_API_KEY is missing or blank", () => {
-  assert.deepEqual(readEnvAiConfig({}), { available: false, config: null });
+test("readEnvAiConfig returns unavailable when no key env name is set", () => {
+  assert.deepEqual(readEnvAiConfig({}), {
+    available: false,
+    config: null,
+    keyEnvName: "",
+    keyEnvOptions: []
+  });
   assert.deepEqual(readEnvAiConfig({ AI_API_KEY: "   " }), {
     available: false,
-    config: null
+    config: null,
+    keyEnvName: "",
+    keyEnvOptions: []
   });
 });
 
@@ -40,6 +47,91 @@ test("readEnvAiConfig keeps a known provider and rejects unknown providers", () 
     AI_PROVIDER: "not-a-provider"
   });
   assert.equal(unknown.config.provider, "openai");
+});
+
+test("readEnvAiConfig falls back to the provider's common key env name", () => {
+  const result = readEnvAiConfig({
+    AI_PROVIDER: "deepseek",
+    DEEPSEEK_API_KEY: "sk-deepseek",
+    OPENAI_API_KEY: "sk-openai"
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.config.provider, "deepseek");
+  assert.equal(result.config.apiKey, "sk-deepseek");
+  assert.equal(result.keyEnvName, "DEEPSEEK_API_KEY");
+});
+
+test("readEnvAiConfig defaults to openai and prefers OPENAI_API_KEY in fallback", () => {
+  const result = readEnvAiConfig({
+    DEEPSEEK_API_KEY: "sk-deepseek",
+    OPENAI_API_KEY: "sk-openai"
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.config.provider, "openai");
+  assert.equal(result.config.apiKey, "sk-openai");
+  assert.equal(result.keyEnvName, "OPENAI_API_KEY");
+});
+
+test("readEnvAiConfig prefers explicit AI_API_KEY over aliases", () => {
+  const result = readEnvAiConfig({
+    AI_API_KEY: "sk-explicit",
+    DEEPSEEK_API_KEY: "sk-deepseek"
+  });
+  assert.equal(result.config.apiKey, "sk-explicit");
+  assert.equal(result.keyEnvName, "AI_API_KEY");
+});
+
+test("readEnvAiConfig uses the user-picked key env name", () => {
+  const result = readEnvAiConfig(
+    {
+      DEEPSEEK_API_KEY: "sk-deepseek",
+      OPENAI_API_KEY: "sk-openai"
+    },
+    "deepseek",
+    "OPENAI_API_KEY"
+  );
+  assert.equal(result.available, true);
+  assert.equal(result.config.provider, "deepseek");
+  assert.equal(result.config.apiKey, "sk-openai");
+  assert.equal(result.keyEnvName, "OPENAI_API_KEY");
+});
+
+test("readEnvAiConfig lists all available key env names", () => {
+  const result = readEnvAiConfig({
+    AI_API_KEY: "sk-explicit",
+    DEEPSEEK_API_KEY: "sk-deepseek"
+  });
+  assert.deepEqual(result.keyEnvOptions, ["AI_API_KEY", "DEEPSEEK_API_KEY"]);
+  // 显式 AI_API_KEY 始终优先
+  assert.equal(result.config.apiKey, "sk-explicit");
+});
+
+test("readEnvAiConfig uses the env provider when the saved provider is mock", () => {
+  const result = readEnvAiConfig(
+    {
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "sk-openai"
+    },
+    "mock",
+    ""
+  );
+  assert.equal(result.available, true);
+  assert.equal(result.config.provider, "openai");
+  assert.equal(result.config.apiKey, "sk-openai");
+});
+
+test("readEnvAiConfig matches the key alias by preferred provider", () => {
+  const result = readEnvAiConfig(
+    {
+      DEEPSEEK_API_KEY: "sk-deepseek",
+      OPENAI_API_KEY: "sk-openai"
+    },
+    "deepseek"
+  );
+  assert.equal(result.available, true);
+  assert.equal(result.config.provider, "deepseek");
+  assert.equal(result.config.apiKey, "sk-deepseek");
+  assert.equal(result.keyEnvName, "DEEPSEEK_API_KEY");
 });
 
 test("readEnvAiConfig strips control characters", () => {

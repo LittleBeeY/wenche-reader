@@ -4,6 +4,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { RssScheduler } from "../src/lib/rss/rssScheduler.js";
 import { Storage } from "../src/lib/storage.js";
 import { startRuntime } from "../src/runtime.js";
 
@@ -109,6 +110,52 @@ test("creates the AI provider from the settings store", async (t) => {
   ).json();
   assert.equal(status.provider, "deepseek");
   assert.equal(status.configured, true);
+});
+
+test("scheduler generates the daily brief at most once per day", async () => {
+  let calls = 0;
+  const scheduler = new RssScheduler({
+    rssService: {
+      refreshDueFeeds: async () => {},
+      runAutoAnalysis: async () => {},
+      generateTodayBrief: async () => {
+        calls += 1;
+        return { briefDate: "today" };
+      }
+    }
+  });
+  await scheduler.ensureTodayBrief();
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 1);
+  // 跨天后再次生成
+  scheduler.lastBriefDate = "2000-01-01";
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 2);
+});
+
+test("scheduler retries the daily brief when generation returns no candidates", async () => {
+  let calls = 0;
+  const scheduler = new RssScheduler({
+    rssService: {
+      refreshDueFeeds: async () => {},
+      runAutoAnalysis: async () => {},
+      generateTodayBrief: async () => {
+        calls += 1;
+        // 前两次无候选（返回 null），第三次成功
+        return calls < 3 ? null : { briefDate: "today" };
+      }
+    }
+  });
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 1);
+  // 无候选：不记录日期，下个 tick 重试
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 2);
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 3);
+  // 成功后不再重试
+  await scheduler.ensureTodayBrief();
+  assert.equal(calls, 3);
 });
 
 test("keeps the current provider when the store write fails", async (t) => {

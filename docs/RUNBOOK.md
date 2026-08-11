@@ -41,20 +41,21 @@ scripts\open-reader.cmd
 - 本地构建统一用 `npm.cmd run desktop:dist`：最终产物（`WencheReader-Setup.exe`、`wenche_reader-<版本>-full.nupkg`、`RELEASES`）固定落在 `<项目根>/release/`；脚本先在系统临时目录（纯 ASCII）构建再回拷，规避 `rcedit` 无法处理中文输出路径的问题。桌面 E2E 用 `npm.cmd run test:desktop`，产物检查用 `npm.cmd run test:packaged`。
 - 若需要直接 `npm.cmd run desktop:make`（CI 等 ASCII 路径场景），产物在 `out/make/squirrel.windows/x64/`；本地中文路径仓库不要直接使用该命令，会因 `rcedit` 报 `Unable to load file` 失败。
 - 安装位置固定为 `%LOCALAPPDATA%\wenche_reader`（Squirrel 按包 ID 决定用户级安装目录，不支持自定义安装位置）；如需可选安装目录只能换 NSIS/MSIX 安装器，并会失去 Squirrel 自动更新能力。
+- 安装/启动流程：`WencheReader-Setup.exe` 是一次性安装器，装完自动在桌面与开始菜单创建「文澈阅读」快捷方式；**日常启动直接双击桌面/开始菜单的「文澈阅读」快捷方式，不要重复运行 Setup.exe**（重复运行会触发 Squirrel 安装逻辑并直接退出，不会进入应用）。快捷方式丢失时可到安装目录 `%LOCALAPPDATA%\wenche_reader\` 双击 `WencheReader.exe` 启动，不建议直接运行版本子目录 `app-*\WencheReader.exe`。
 - 安装后数据位于 `%LOCALAPPDATA%\Wenche Reader`；日志在 `logs/`（按日轮转，保留 7 天、单文件 5 MiB）。
 - 「设置 → 数据」可查看各目录占用并一键清理资讯图片缓存/浏览缓存；「更改位置」可把数据根（data/uploads/cache/backups）迁移到其他磁盘，迁移后应用自动重启，`config/secrets/logs/session` 留在引导根。
 - 安装/卸载/开始菜单快捷方式显示名为「文澈阅读」；可执行文件与包 ID 保持英文 `WencheReader.exe`/`wenche_reader`。卸载入口在统一「设置」对话框的「关于与更新」区段（本地侧栏「更多 → 设置」、RSS 页脚或 RSS 文章「更多」菜单均可打开），也可直接 `Update.exe --uninstall`；Web/CLI 数据迁移到桌面版使用 V2 备份导出/恢复，桌面版不会自动读取仓库数据目录。
 - 更新：侧栏「更多 → 关于与更新」。仅打包版且配置 `WENCHE_UPDATE_BASE_URL` 后启用，频道由 `config/settings.json` 的 `updates.channel` 决定（`stable`/`beta`）。
 - 首次启动会在版本变更时自动把 `data/reader.sqlite` 备份到 `backups/pre-upgrade-*.sqlite`（保留最近 3 份）；存在 `reader.sqlite-wal`/`reader.sqlite-shm` 时会拒绝启动并显示错误页。
 - AI Key 保存在 `secrets/ai-key.bin`（safeStorage 加密），不再写入 `.env`；升级后 Key 仍可用但页面不回显。
-- 若启动前已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会作为当前会话的 Key 自动使用、不落盘；AI 设置对话框会显示来源并可随时改用保存的 Key。修改环境变量后需重启应用生效。
+- 若启动前已设置环境变量 `AI_API_KEY`（可搭配 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`），桌面版会作为当前会话的 Key 自动使用、不落盘；`AI_API_KEY` 缺失时也自动识别 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY` 等常见别名；同时存在多个 Key 变量时，AI 设置对话框提供下拉框选择用哪个（切换即生效、不落盘），并显示当前来源变量名。修改环境变量后需重启应用生效。
 - 排障：清空 `cache/` 不会丢数据；`data/`、`uploads/`、`config/`、`secrets/`、`backups/` 不要手动删除；卸载不会删除 `%LOCALAPPDATA%\Wenche Reader`。
 
 ## 配置 AI 接口（应用内）
 
 打开应用后点击 AI 面板顶部的「AI 接口」状态栏（本地文档视图）或资讯首页标题栏的 AI 按钮，即可进入设置对话框：选择接口、填写 API Key、按需调整根地址和模型，先「测试连接」再「保存设置」。保存后立即生效，无需重启服务，AI 初评等后台任务也会自动使用新配置。连接测试按接口类型发起：OpenAI-compatible 服务请求 `/models`，Anthropic 请求 `/v1/models`，Gemini 请求 `/v1beta/models`，本地 Ollama 请求 `/api/tags`；部分服务不提供对应接口时测试会失败，但配置仍可保存，以实际问答为准。
 
-Key 保存在本地 `.env` 中，设置页面只显示“已配置/未配置”，不回显 Key；留空保存表示保留原 Key。历史版本提供的 `scripts\config-ai.cmd` 仍可使用，但不是必需入口。
+Key 保存在本地 `.env` 中，设置页面只显示“已配置/未配置”，不回显 Key；留空保存表示保留原 Key。若启动服务时进程环境已设置 `AI_API_KEY` 且 `.env` 未保存 Key，源码版自动把它作为当前会话的 Key 使用、不落盘，设置对话框显示“当前 Key 来自环境变量”；`AI_API_KEY` 缺失时也会自动识别 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY` 等常见别名（按当前 provider 优先匹配，见 `src/lib/aiEnvKeys.js`），对话框显示实际来源变量名；同时存在多个 Key 变量时，对话框提供下拉框让用户选择（桌面版切换即生效，源码版保存后生效，均不落盘）；手动输入新 Key 保存后写入 `.env`。历史版本提供的 `scripts\config-ai.cmd` 仍可使用，但不是必需入口。
 
 ## 环境变量
 
@@ -140,7 +141,7 @@ npm.cmd start
 
 ### 今日精选没有变化
 
-同一天内简报保持稳定；点击“重新生成”才会重新分诊与排序。AI 初评受每日预算限制（默认 60 条/天，可在 `.env` 之外通过资讯设置调整）；预算用尽或 AI 不可用时不影响订阅与阅读，只是推荐原因退回为确定性依据。
+今日精选由后台每天首次运行时自动生成一次，无需手动触发；同一天内简报保持稳定，点击“重新生成”可强制重新分诊与排序。当天没有可读候选时会继续在后续调度中自动重试，直到生成成功。AI 初评受每日预算限制（默认 60 条/天，可在资讯设置调整）；预算用尽或 AI 不可用时不影响订阅与阅读，只是推荐原因退回为确定性依据。
 
 ### HTML 样式或链接不完整
 

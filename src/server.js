@@ -13,6 +13,11 @@ import {
   PROVIDER_PRESETS,
   resolveAiProviderConfig
 } from "./lib/aiProvider.js";
+import {
+  AI_KEY_ENV_NAMES,
+  pickEnvApiKey,
+  sanitizeEnvValue
+} from "./lib/aiEnvKeys.js";
 import { EnvAiSettingsStore } from "./lib/aiSettingsStore.js";
 import { isSupportedFile, parseDocumentBuffer } from "./lib/documentParser.js";
 import { buildReadingMarkdown } from "./lib/markdownExport.js";
@@ -493,6 +498,10 @@ export function createApp(options = {}) {
         baseUrl: stored.baseUrl || "",
         model: stored.model || "",
         hasApiKey: Boolean(stored.apiKey),
+        envKeyAvailable: stored.envKeyAvailable === true,
+        envKeyInUse: stored.envKeyInUse === true,
+        envKeyName: stored.envKeyName || "",
+        envKeyOptions: Array.isArray(stored.envKeyOptions) ? stored.envKeyOptions : [],
         providers: listProviderOptions()
       });
     } catch (error) {
@@ -1136,13 +1145,6 @@ function listProviderOptions() {
   return options;
 }
 
-/** 剔除换行与控制字符，防止通过 .env 写入注入新的键。 */
-function sanitizeEnvValue(value) {
-  return String(value || "")
-    .replace(/[\u0000-\u001f\u007f]/g, "")
-    .trim();
-}
-
 function normalizeAiSettingsInput(body) {
   const provider = String(body?.provider ?? "").trim().toLowerCase();
   if (!VALID_AI_PROVIDERS.has(provider)) {
@@ -1153,18 +1155,24 @@ function normalizeAiSettingsInput(body) {
     apiKey: sanitizeEnvValue(body?.apiKey),
     baseUrl: sanitizeEnvValue(body?.baseUrl),
     model: sanitizeEnvValue(body?.model),
-    clearKey: body?.clearKey === true
+    clearKey: body?.clearKey === true,
+    envKeyName: sanitizeEnvValue(body?.envKeyName)
   };
 }
 
 function resolveFullAiConfig(input, current) {
+  // 只有用户显式提交了 Key 或请求清除时才写回 .env；
+  // 用户选择环境变量 Key 或留空保存时，Key 只用于当前会话、不落盘。
+  const persistKey = Boolean(input.apiKey) || input.clearKey;
   if (input.provider === "mock") {
     return {
       provider: "mock",
-      apiKey: input.clearKey ? "" : input.apiKey || current.apiKey || "",
+      apiKey: input.clearKey ? "" : input.apiKey || envKeyValue(input) || current.apiKey || "",
       baseUrl: input.baseUrl || current.baseUrl || "",
       model: input.model || current.model || "",
-      clearKey: input.clearKey
+      clearKey: input.clearKey,
+      persistKey,
+      envKeyName: input.envKeyName || ""
     };
   }
   const resolved = resolveAiProviderConfig(aiSettingsToProviderConfig(input, current));
@@ -1176,8 +1184,18 @@ function resolveFullAiConfig(input, current) {
     apiKey: input.clearKey ? "" : resolved.apiKey,
     baseUrl: resolved.baseUrl,
     model: resolved.model,
-    clearKey: input.clearKey
+    clearKey: input.clearKey,
+    persistKey,
+    envKeyName: input.envKeyName || ""
   };
+}
+
+/** 用户显式选择的环境变量 Key 值（仅当前会话读取，不落盘）。 */
+function envKeyValue(input) {
+  // 只接受已知 Key 变量名，避免客户端用任意环境变量名作为 Key 引用。
+  return input.envKeyName && AI_KEY_ENV_NAMES.includes(input.envKeyName)
+    ? pickEnvApiKey(process.env, input.provider, input.envKeyName).value
+    : "";
 }
 
 /** 桌面会话鉴权：只接受回环 Host + 固定长度随机令牌，拒绝一切未认证访问。 */
@@ -1243,7 +1261,7 @@ function providerTestErrorMessage(text) {
 function aiSettingsToProviderConfig(input, current = {}) {
   return {
     provider: input.provider,
-    apiKey: input.apiKey || current.apiKey || "",
+    apiKey: input.apiKey || envKeyValue(input) || current.apiKey || "",
     ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
     ...(input.model ? { model: input.model } : {})
   };

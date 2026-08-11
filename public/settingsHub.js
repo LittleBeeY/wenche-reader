@@ -10,6 +10,9 @@ let dialog = null;
 export function initSettingsHub() {
   dialog = document.querySelector("#settings-dialog");
   if (!dialog) return;
+  // 对话框常驻渲染树（见 design-refresh.css：未打开时 display:block + opacity:0），
+  // 用 inert 阻断未打开时的交互与聚焦，打开时移除。
+  dialog.setAttribute("inert", "");
   for (const tab of dialog.querySelectorAll("[data-settings-tab]")) {
     tab.addEventListener("click", () => {
       activate(tab.dataset.settingsTab);
@@ -21,16 +24,24 @@ export function initSettingsHub() {
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) closeSettings();
   });
+  // Esc 等关闭路径也会走到这里，确保关闭后重新加回 inert。
+  dialog.addEventListener("close", () => {
+    if (!dialog.open) dialog.setAttribute("inert", "");
+  });
 }
 
 export function openSettings(section) {
   if (!dialog) return;
   activate(section);
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) {
+    dialog.removeAttribute("inert");
+    dialog.showModal();
+  }
 }
 
 export function closeSettings() {
   dialog?.close();
+  if (dialog && !dialog.open) dialog.setAttribute("inert", "");
 }
 
 function activate(section) {

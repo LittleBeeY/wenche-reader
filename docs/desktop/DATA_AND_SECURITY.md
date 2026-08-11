@@ -201,9 +201,11 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 桌面版支持把启动进程环境中的 `AI_API_KEY` 作为「未保存 Key」的只读回退：
 
 - main 启动时读取 `AI_API_KEY`，可选 `AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL` 一起生效；未写 `AI_PROVIDER` 时默认 `openai`，非法值回退到 `openai`；
+- `AI_API_KEY` 缺失时自动识别常见别名变量名（`OPENAI_API_KEY`/`DEEPSEEK_API_KEY`/`MOONSHOT_API_KEY`/`ZHIPUAI_API_KEY`/`DASHSCOPE_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY`/`GOOGLE_API_KEY`），优先匹配当前 provider 对应的别名（见 `src/lib/aiEnvKeys.js`）；别名变量只用于读取，同样不落盘、不回显；
 - 没有已保存 Key 时自动作为当前会话配置；已有保存 Key 时以保存值为准，用户仍可在设置对话框显式选择应用环境变量 Key；
-- Key 只存在于 main/worker 内存与 bootstrap/apply 消息中，绝不写入 `settings.json`、`secrets/`、SQLite、日志、备份或 `.env`；
-- renderer 只能通过 IPC 得知 `available`/`inUse` 两个布尔值，不能读取 Key 本身；
+- 同时存在多个可用 Key 变量时，设置对话框提供下拉框让用户选择（`applyEnvAiConfig` 可携带所选变量名），切换即对当前会话生效；
+- Key 只存在于 main/worker 内存与 bootstrap/apply 消息中，绝不写入 `settings.json`、`secrets/`、SQLite、日志、备份或 `.env`；保存设置时若 Key 来自环境变量（`persistKey=false`），main 不会把它写入 `secrets/ai-key.bin`，密钥文件保持不变；
+- renderer 只能通过 IPC 得知 `available`/`inUse` 两个布尔值、来源变量名 `keyEnvName` 与可用变量名列表 `keyEnvOptions`，不能读取 Key 本身；
 - 修改环境变量后必须重启应用才生效；桌面版不扫描仓库或任意目录的 `.env`，也不把调用者环境变量视为可信数据源之外的能力；
 - 与 Web/CLI 版的 `.env` 一样，这是用户主动提供的配置输入；应用不负责验证其来源，只保证不落盘、不回显。
 
@@ -211,7 +213,7 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 
 允许 Key 出现的位置：
 
-- 启动进程环境变量中用户主动设置的 `AI_API_KEY`/`AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL`（只读输入，不写回）；
+- 启动进程环境变量中用户主动设置的 `AI_API_KEY`/`AI_PROVIDER`/`AI_API_BASE`/`AI_MODEL` 及其别名 Key 变量（`OPENAI_API_KEY`/`DEEPSEEK_API_KEY` 等，只读输入，不写回）；
 - AI 设置 POST 的 renderer 请求内存；
 - utility process 当前配置内存；
 - main/worker 之间的结构化克隆消息内存；

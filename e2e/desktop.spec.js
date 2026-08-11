@@ -5,19 +5,23 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AI_KEY_ENV_NAMES } from "../src/lib/aiEnvKeys.js";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   ".."
 );
 
+/** 测试默认只保留显式传入的 AI 环境变量，避免宿主机器的别名变量污染断言。 */
 function launchOptions(root, extraEnv = {}) {
+  const env = { ...process.env };
+  for (const name of AI_KEY_ENV_NAMES) delete env[name];
   return {
     args: [projectRoot, "--no-sandbox"],
     cwd: projectRoot,
     timeout: 60000,
     env: {
-      ...process.env,
+      ...env,
       WENCHE_DESKTOP_DATA_ROOT: root,
       NODE_ENV: "test",
       ...extraEnv
@@ -82,7 +86,7 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   await page.locator("#sidebar-more > summary").click();
   await expect(page.locator("#sidebar-settings-open")).toBeVisible();
   await page.locator("#sidebar-settings-open").click();
-  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="about"]').click();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
   await page.locator("#settings-close").click();
@@ -245,11 +249,11 @@ test("saves AI settings through safeStorage and keeps them across restart", asyn
       timeout: 30000
     });
     await firstPage.locator("#ai-status").click();
-    await expect(firstPage.locator("#settings-dialog")).toBeVisible();
+    await expect(firstPage.locator("#settings-dialog")).toHaveJSProperty("open", true);
     await firstPage.locator("#ai-settings-provider").selectOption("openai");
     await firstPage.locator("#ai-settings-key").fill("saved-secret-key");
     await firstPage.locator("#ai-settings-save").click();
-    await expect(firstPage.locator("#settings-dialog")).not.toBeVisible();
+    await expect(firstPage.locator("#settings-dialog")).toHaveJSProperty("open", false);
     await firstPage.locator("#ai-status").click();
     await expect(firstPage.locator("#ai-settings-key-hint")).toContainText("已配置");
     await firstPage.locator("#ai-settings-cancel").click();
@@ -279,7 +283,12 @@ test("uses AI_API_KEY from the environment for the current session only", async 
     });
     const { page } = launched;
     const envState = await page.evaluate(() => window.wencheDesktop.getAiEnvState());
-    expect(envState).toEqual({ available: true, inUse: true });
+    expect(envState).toEqual({
+      available: true,
+      inUse: true,
+      keyEnvName: "AI_API_KEY",
+      keyEnvOptions: ["AI_API_KEY"]
+    });
 
     const settings = await page.evaluate(async () => {
       const response = await fetch("/api/ai/settings");
@@ -308,7 +317,7 @@ test("exposes an in-app uninstall entry that stays safe in dev mode", async ({
   const { page } = desktopApp;
   await page.locator("#sidebar-more > summary").click();
   await page.locator("#sidebar-settings-open").click();
-  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="about"]').click();
   const uninstallButton = page.locator("#desktop-uninstall");
   await expect(uninstallButton).toBeVisible();
@@ -395,7 +404,7 @@ test("opens the unified settings dialog from the RSS article menu", async ({
   });
   await page.locator(".rss-article-more > summary").click();
   await page.locator("#rss-open-settings").click();
-  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="about"]').click();
   await expect(page.locator("#desktop-version")).toContainText("1.1.0");
   await page.locator("#settings-close").click();
@@ -466,9 +475,11 @@ test("opens AI settings while startup data is still loading", async ({
   await page.reload();
   await page.waitForSelector("#ai-status");
   await page.locator("#ai-status").click();
-  await expect(page.locator("#settings-dialog")).toBeVisible({
-    timeout: 20000
-  });
+  await expect(page.locator("#settings-dialog")).toHaveJSProperty(
+    "open",
+    true,
+    { timeout: 20000 }
+  );
 });
 
 test("populates the AI settings section when opened from the sidebar tab", async ({
@@ -477,7 +488,7 @@ test("populates the AI settings section when opened from the sidebar tab", async
   const { page } = desktopApp;
   await page.locator("#sidebar-more > summary").click();
   await page.locator("#sidebar-settings-open").click();
-  await expect(page.locator("#settings-dialog")).toBeVisible();
+  await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="ai"]').click();
   await expect(page.locator("#settings-section-ai")).toBeVisible();
   await expect
@@ -489,6 +500,32 @@ test("populates the AI settings section when opened from the sidebar tab", async
   expect(
     await page.locator("#ai-settings-provider").isEnabled()
   ).toBe(true);
+});
+
+test("keeps the settings dialog composited while closed to avoid soft-render flash", async ({
+  desktopApp
+}) => {
+  const { page } = desktopApp;
+  const dialog = page.locator("#settings-dialog");
+  // 常驻渲染：未打开时保持 display:block + opacity:0（而非 UA 的 display:none），
+  // 合成层与内容从页面加载起就已光栅化，showModal 不再新建表面 → 不闪帧。
+  await expect(dialog).toHaveCSS("display", "block");
+  await expect(dialog).toHaveCSS("opacity", "0");
+  await expect(dialog).toHaveJSProperty("open", false);
+  expect(await dialog.getAttribute("inert")).not.toBeNull();
+
+  // 打开：移除 inert 并进入 modal
+  await page.locator("#sidebar-more > summary").click();
+  await page.locator("#sidebar-settings-open").click();
+  await expect(dialog).toHaveJSProperty("open", true);
+  await expect(dialog).toHaveCSS("opacity", "1");
+  expect(await dialog.getAttribute("inert")).toBeNull();
+
+  // 关闭：inert 恢复，渲染状态回到常驻隐藏
+  await page.locator("#settings-close").click();
+  await expect(dialog).toHaveJSProperty("open", false);
+  await expect(dialog).toHaveCSS("opacity", "0");
+  expect(await dialog.getAttribute("inert")).not.toBeNull();
 });
 
 test("relocates the data root and keeps documents readable", async () => {

@@ -663,6 +663,24 @@ test("generates a stable daily brief with reasons", async (t) => {
   assert.ok(!filteredBrief.json.entries.some((item) => item.entryId === thinEntryId));
 });
 
+test("does not persist an empty brief when there are no candidates", async (t) => {
+  const { baseUrl, feedUrl, app } = await withTestServer(t, {
+    feedState: { entries: [{ id: "only", title: "仅有标题", body: "" }] }
+  });
+  await api(baseUrl, "/api/rss/feeds", { method: "POST", body: { feedUrl: `${feedUrl}/feed.xml` } });
+
+  // 候选条目没有可读正文，不应保存空 brief
+  const brief = await api(baseUrl, "/api/rss/briefs/today", { method: "POST", body: {} });
+  assert.equal(brief.status, 200);
+  assert.equal(brief.json, null);
+
+  // 再次 GET 仍是 404（未生成），不会出现「横幅 + 空列表」
+  const today = await api(baseUrl, "/api/rss/briefs/today");
+  assert.equal(today.status, 404);
+  const saved = app.locals.storage.getRssBrief(new Date().toISOString().slice(0, 10));
+  assert.equal(saved, null);
+});
+
 test("handles opml preview, import and export", async (t) => {
   const { baseUrl, feedUrl } = await withTestServer(t, { feedState: { entries: sampleEntries } });
   const opml = `<?xml version="1.0"?>

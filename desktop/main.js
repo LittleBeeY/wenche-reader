@@ -138,6 +138,7 @@ let updater = null;
 let protocolUninstall = null;
 let envAiConfig = null;
 let envAiKeyInUse = false;
+let savedAiProvider = "mock";
 let envApplyPending = null;
 let relocatePending = null;
 let updatePending = false;
@@ -213,7 +214,10 @@ async function initializeDesktop() {
 
   sessionToken = randomBytes(32).toString("base64url");
   const settings = await settingsRepository.read();
-  envAiConfig = readEnvAiConfig();
+  savedAiProvider = settings.provider;
+  // 传入已保存的 provider，让环境变量 Key 的别名匹配与最终生效的 provider 一致
+  // （例如用户已保存 deepseek 时优先识别 DEEPSEEK_API_KEY）。
+  envAiConfig = readEnvAiConfig(process.env, settings.provider);
   envAiKeyInUse = envKeyInUse(settings, envAiConfig);
   if (settings.keyUnavailable) {
     logger("warn", "ai key unavailable; starting unconfigured");
@@ -425,15 +429,19 @@ function registerIpcHandlers() {
     if (!isTrustedSender(event)) return { available: false, inUse: false };
     return {
       available: Boolean(envAiConfig?.available),
-      inUse: envAiKeyInUse
+      inUse: envAiKeyInUse,
+      keyEnvName: envAiConfig?.keyEnvName || "",
+      keyEnvOptions: Array.isArray(envAiConfig?.keyEnvOptions)
+        ? envAiConfig.keyEnvOptions
+        : []
     };
   });
-  ipcMain.handle("wenche:apply-env-ai-config", (event) => {
+  ipcMain.handle("wenche:apply-env-ai-config", (event, envKeyName) => {
     if (!isTrustedSender(event)) return { accepted: false };
-    if (!envAiConfig?.available || envAiKeyInUse || envApplyPending || !worker) {
+    if (!envAiConfig?.available || envApplyPending || !worker) {
       return { accepted: false };
     }
-    return applyEnvAiConfig();
+    return applyEnvAiConfig(envKeyName);
   });
   ipcMain.handle("wenche:uninstall-app", async (event) => {
     if (!isTrustedSender(event)) return { accepted: false };
@@ -515,7 +523,10 @@ function registerIpcHandlers() {
   });
 }
 
-function applyEnvAiConfig() {
+function applyEnvAiConfig(envKeyName = "") {
+  // 按用户当前选择重新解析环境变量 Key（provider 用已保存值匹配别名）。
+  const selected = readEnvAiConfig(process.env, savedAiProvider, envKeyName);
+  if (!selected.available) return Promise.resolve({ accepted: false });
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       envApplyPending = null;
@@ -527,27 +538,33 @@ function applyEnvAiConfig() {
         resolve({ accepted: ok });
       }
     };
-    worker.postMessage({ type: "settings-apply", config: envAiConfig.config });
+    worker.postMessage({ type: "settings-apply", config: selected.config });
   });
 }
 
 async function persistAiSettings({ requestId, config }) {
   try {
+    // persistKey=false 表示 Key 来自环境变量（仅当前会话）：不写入 secrets，
+    // settings.json 只保存非敏感字段；会话内仍保留环境变量 Key。
+    const persistKey = config?.persistKey !== false;
     const saved = await settingsRepository.write({
       provider: String(config?.provider || "mock"),
-      apiKey: String(config?.apiKey || ""),
+      apiKey: persistKey ? String(config?.apiKey || "") : "",
       baseUrl: String(config?.baseUrl || ""),
       model: String(config?.model || ""),
       clearKey: config?.clearKey === true
     });
     envAiKeyInUse = envKeyInUse(saved, envAiConfig);
+    savedAiProvider = saved.provider;
     worker.postMessage({
       type: "settings-write-result",
       requestId,
       ok: true,
       config: {
         provider: saved.provider,
-        apiKey: saved.apiKey,
+        apiKey: persistKey
+          ? saved.apiKey
+          : String(config?.apiKey || saved.apiKey || ""),
         baseUrl: saved.baseUrl,
         model: saved.model
       }

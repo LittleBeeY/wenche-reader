@@ -621,6 +621,39 @@ textarea::placeholder {
   color: #c5ebe4;
 }
 
+.ai-status-env-switch {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: inherit;
+  text-align: left;
+  border: 1px dashed rgba(45, 122, 112, 0.45);
+  border-radius: 8px;
+  background: rgba(232, 242, 243, 0.5);
+  cursor: pointer;
+}
+
+.ai-status-env-switch[hidden] {
+  display: none;
+}
+
+.ai-status-env-switch:hover {
+  border-style: solid;
+  background: rgba(198, 235, 229, 0.7);
+}
+
+:root[data-theme="night"] .ai-status-env-switch {
+  border-color: rgba(151, 211, 202, 0.3);
+  background: rgba(36, 91, 83, 0.35);
+}
+
+:root[data-theme="night"] .ai-status-env-switch:hover {
+  background: rgba(36, 91, 83, 0.55);
+}
+
 .ai-disclosure {
   border-color: rgba(255, 255, 255, 0.58);
 }
@@ -911,6 +944,20 @@ textarea::placeholder {
   /* 常驻合成层：避免 showModal 时新建表面在软渲染下闪黑帧 */
   transform: translateZ(0);
   will-change: transform;
+}
+
+/* 覆盖 UA 的 dialog:not([open]){display:none}：display:none 的元素不会创建合成层，
+   showModal 时现场新建表面，软渲染下首帧内容未光栅化上屏即闪烁。
+   让设置对话框从加载起常驻渲染树与合成层，未打开时仅用 opacity 隐藏，
+   showModal 只改透明度复用已有表面，不再闪帧。配合 inert 阻断交互与聚焦。 */
+.settings-dialog:not([open]) {
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-dialog[open] {
+  opacity: 1;
 }
 
 .rss-dialog::backdrop,

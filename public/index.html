@@ -555,6 +555,7 @@
 
         <div id="analysis-view" class="ai-view">
           <div id="ai-status" class="ai-status" role="button" tabindex="0" title="点击配置 AI 接口">正在检查 AI 接口</div>
+          <button id="ai-status-env-switch" type="button" class="ai-status-env-switch" hidden></button>
 
           <details class="ai-disclosure" id="ai-quick-tools">
             <summary>
@@ -689,7 +690,7 @@
       </form>
     </dialog>
 
-    <dialog id="settings-dialog" class="rss-dialog settings-dialog">
+    <dialog id="settings-dialog" class="rss-dialog settings-dialog" inert>
       <div class="settings-dialog-header">
         <h2>设置</h2>
         <button id="settings-close" type="button" class="settings-close" data-settings-close aria-label="关闭设置">×</button>
@@ -716,6 +717,10 @@
           </label>
           <div id="ai-settings-env" class="ai-settings-env" hidden>
             <p id="ai-settings-env-text"></p>
+            <label class="ai-settings-field" for="ai-settings-env-select">
+              <span>使用哪个环境变量 Key</span>
+              <select id="ai-settings-env-select" hidden></select>
+            </label>
             <button id="ai-settings-use-env" type="button">使用环境变量 Key</button>
           </div>
           <label class="ai-settings-field" for="ai-settings-base">
