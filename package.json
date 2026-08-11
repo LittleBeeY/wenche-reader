@@ -1,6 +1,6 @@
 {
   "name": "wenche-reader",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "文澈阅读：本地优先、支持划词 AI 解析的深度阅读器",
   "main": "desktop/main.js",
   "productName": "文澈阅读",
