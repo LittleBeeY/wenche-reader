@@ -187,14 +187,18 @@ const launchRoot = await mkdtemp(path.join(tmpdir(), "wenche-smoke-"));
 const localAppData = path.join(launchRoot, "localappdata");
 const ignoredOverride = path.join(launchRoot, "ignored");
 try {
+  let stderr = "";
+  let exitCode = null;
   const child = spawn(exePath, [], {
     env: {
       ...process.env,
       LOCALAPPDATA: localAppData,
       WENCHE_DESKTOP_DATA_ROOT: ignoredOverride
     },
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
   });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.on("exit", (code) => { exitCode = code; });
   const dataRoot = path.join(localAppData, "Wenche Reader");
   const dbPath = path.join(dataRoot, "data", "reader.sqlite");
   const settingsPath = path.join(dataRoot, "config", "settings.json");
@@ -210,8 +214,12 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   if (!existsSync(dbPath) || !existsSync(settingsPath)) {
+    console.error(`[smoke] stderr tail: ${stderr.slice(-3000)}`);
     child.kill();
-    fail("packaged app did not create the LocalAppData structure");
+    fail(
+      `packaged app did not create the LocalAppData structure (exitCode=${exitCode}, ` +
+      `dataRoot=${existsSync(dataRoot)}, db=${existsSync(dbPath)}, settings=${existsSync(settingsPath)})`
+    );
   }
   if (existsSync(ignoredOverride)) {
     child.kill();

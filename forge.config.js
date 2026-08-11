@@ -1,6 +1,5 @@
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
-import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,37 +35,33 @@ const TOP_LEVEL_EXCLUDES = [
   /^\/SECURITY\.md$/
 ];
 
-// 生产依赖白名单：仅打包 package.json dependencies 中声明的模块及其传递依赖，
+// 生产依赖白名单：仅打包 production dependencies 及其传递依赖，
 // 排除 devDependencies（electron、playwright、forge 等），避免 app.asar 膨胀。
-// @electron/packager 在 Windows 上 prune 不可靠，这里用函数式 ignore 显式白名单。
-// 用 `npm ls --omit=dev --json` 计算生产依赖闭包（含 @napi-rs/canvas 等传递依赖），
-// 只打包该闭包内的 node_modules 包，排除全部 devDependencies。
+// 方案：解析 package-lock.json 的 packages 字段。lockfile v3 中每个包都有 dev: true
+// 标记，不依赖子进程，比 npm ls 更可靠（不受 cwd/stdio/环境 影响）。
 function productionDeps() {
-  // 用文件系统路径作为 cwd（URL 对象在部分 Node 打包环境会被 execSync 拒绝），
-  // 确保 npm ls 在项目根执行，拿到完整生产依赖闭包（含传递依赖）。
-  const cwd = projectRoot;
   try {
-    const output = execSync("npm ls --omit=dev --all --json", {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-    const tree = JSON.parse(output);
+    const lockPath = path.join(projectRoot, "package-lock.json");
+    const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+    const packages = lock.packages || {};
     const deps = new Set();
-    const walk = (node) => {
-      if (!node || typeof node !== "object") return;
-      for (const [name, child] of Object.entries(node.dependencies || {})) {
-        deps.add(name);
-        walk(child);
-      }
-    };
-    walk(tree);
-    console.error(`[forge] production deps (npm ls): ${deps.size}`);
+
+    for (const [pkgPath, info] of Object.entries(packages)) {
+      // 跳过根包
+      if (!pkgPath || pkgPath === "") continue;
+      // 跳过 dev-only 包（lockfile v3 的 dev 标记）
+      if (info.dev) continue;
+      // 提取包名：最后一个 "node_modules/" 之后的部分
+      const segments = pkgPath.split("node_modules/");
+      const pkgName = segments[segments.length - 1];
+      if (pkgName) deps.add(pkgName);
+    }
+
+    console.error(`[forge] production deps (lockfile): ${deps.size}`);
     return deps;
   } catch (error) {
-    // npm ls 失败（依赖树不完整/退出码非 0）时，回退到顶层 dependencies + 已知传递依赖，
-    // 避免误排除运行必需模块（如 @xmldom/xmldom、@napi-rs/canvas）。
-    console.error(`[forge] npm ls failed, using top-level deps fallback: ${error.message}`);
+    // lockfile 解析失败时回退到顶层 dependencies
+    console.error(`[forge] lockfile parse failed, using top-level deps fallback: ${error.message}`);
     return new Set(
       Object.keys(
         JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"))
