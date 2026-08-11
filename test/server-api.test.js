@@ -7,6 +7,7 @@ import {
   AI_KEY_ENV_ALIASES,
   AI_KEY_ENV_FALLBACK_ORDER
 } from "../src/lib/aiEnvKeys.js";
+import { APP_INFO } from "../src/lib/appInfo.js";
 import { createApp } from "../src/server.js";
 import { consumeEventStream } from "../public/aiStream.js";
 
@@ -94,7 +95,7 @@ test("reports the service identity from the health endpoint", async (t) => {
   assert.deepEqual(await response.json(), {
     name: "文澈阅读",
     fullName: "文澈AI深度阅读系统",
-    version: "1.1.0",
+    version: APP_INFO.version,
     status: "ok"
   });
 });

@@ -11,5 +11,5 @@ test("keeps the desktop version aligned with package metadata", async () => {
   assert.equal(packageJson.main, "desktop/main.js");
   assert.equal(packageJson.productName, "文澈阅读");
   assert.equal(packageJson.devDependencies.electron, "43.3.0");
-  assert.equal(packageJson.version, "1.1.0");
+  assert.match(packageJson.version, /^\d+\.\d+\.\d+$/);
 });

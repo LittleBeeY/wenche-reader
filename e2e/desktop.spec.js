@@ -11,6 +11,10 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   ".."
 );
+const packageJson = JSON.parse(
+  await readFile(path.join(projectRoot, "package.json"), "utf8")
+);
+const APP_VERSION = packageJson.version;
 
 /** 测试默认只保留显式传入的 AI 环境变量，避免宿主机器的别名变量污染断言。 */
 function launchOptions(root, extraEnv = {}) {
@@ -88,7 +92,7 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   await page.locator("#sidebar-settings-open").click();
   await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="about"]').click();
-  await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await expect(page.locator("#desktop-version")).toContainText(APP_VERSION);
   await page.locator("#settings-close").click();
 
   const sandbox = await page.evaluate(() => ({
@@ -106,7 +110,7 @@ test("renders the reader in a sandboxed renderer with the desktop API", async ({
   expect(info).toEqual({
     desktop: true,
     platform: "win32",
-    version: "1.1.0"
+    version: APP_VERSION
   });
 });
 
@@ -118,7 +122,7 @@ test("proxies the API and vendor assets through app:// with a strict CSP", async
     fetch("/api/health").then((response) => response.json())
   );
   expect(health.status).toBe("ok");
-  expect(health.version).toBe("1.1.0");
+  expect(health.version).toBe(APP_VERSION);
 
   const vendor = await page.evaluate(async () => {
     const response = await fetch("/vendor/docx-preview.min.js");
@@ -406,7 +410,7 @@ test("opens the unified settings dialog from the RSS article menu", async ({
   await page.locator("#rss-open-settings").click();
   await expect(page.locator("#settings-dialog")).toHaveJSProperty("open", true);
   await page.locator('[data-settings-tab="about"]').click();
-  await expect(page.locator("#desktop-version")).toContainText("1.1.0");
+  await expect(page.locator("#desktop-version")).toContainText(APP_VERSION);
   await page.locator("#settings-close").click();
 });
 
