@@ -23,7 +23,7 @@ npm.cmd run config:ai
 
 本地桌面版构建统一用 `npm.cmd run desktop:dist`：ASCII 临时目录构建后自动把最终产物（Setup.exe/nupkg/RELEASES）回拷到 `<项目根>/release/`，规避 `rcedit` 不识别中文输出路径的问题；CI 继续用 `desktop:make`。
 
-应用内自动更新目前未启用：桌面版通过 `WENCHE_UPDATE_BASE_URL` + Squirrel 更新源（`{base}/stable/win32/x64/`）实现，但发布产物（nupkg 约 157MB）超过 GitHub Pages 单文件 100MB 上限，当前采用「GitHub Release 下载手动安装」模式。若需启用自动更新，需改用支持大文件的对象存储（R2/COS/OSS）托底更新目录，并保持 `desktop/updater.js` 的 feed URL 约定。
+应用内自动更新目前未启用：桌面版通过 `WENCHE_UPDATE_BASE_URL` + Squirrel 更新源（`{base}/stable/win32/x64/`）实现，但发布产物（nupkg 约 150MB）超过 GitHub Pages 单文件 100MB 上限，当前采用「GitHub Release 下载手动安装」模式。若需启用自动更新，需改用支持大文件的对象存储（R2/COS/OSS）托底更新目录，并保持 `desktop/updater.js` 的 feed URL 约定。
 
 ## 代码边界
 

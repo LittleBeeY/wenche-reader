@@ -125,7 +125,7 @@ agent 必须检查所有使用 `document.filePath` 的入口，确保在读取�
 ```json
 {
   "schemaVersion": 1,
-  "lastSuccessfulAppVersion": "1.1.0"
+  "lastSuccessfulAppVersion": "1.2.1"
 }
 ```
 
