@@ -144,7 +144,7 @@ Get-AuthenticodeSignature -LiteralPath <artifact>
 └─ WencheReader-Setup.exe
 ```
 
-当前源码仓库是私有仓库，因此终端用户的 updater 不得依赖该私有仓库的 GitHub API，也不得内置 GitHub Token。CI 可以把已验证产物发布到单独的公共静态存储或公开发行仓库，但客户端只知道上述 HTTPS base URL。
+当前源码仓库是公开仓库；终端用户的 updater 不得依赖 GitHub API（限流与凭据风险），也不得内置 GitHub Token。CI 可以把已验证产物发布到单独的公共静态存储或公开发行仓库，但客户端只知道上述 HTTPS base URL。
 
 开发环境缺少 base URL 时禁用 updater，并返回明确“未配置更新源”；正式 release job 缺少该变量必须失败。
 

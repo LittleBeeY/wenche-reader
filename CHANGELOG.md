@@ -2,6 +2,12 @@
 
 本项目遵循语义化版本。
 
+## [Unreleased]
+
+### 打包与 CI
+
+- 修复桌面版打包后后端 worker 启动崩溃、无法创建数据库的问题：函数式 ignore 曾把 scoped 包（如 `@xmldom/xmldom`、`@napi-rs/canvas`）的 scope 目录（`/node_modules/@xmldom`）当作未知包名整体忽略，导致运行必需的传递依赖缺失。现放行 scope 目录本身、以 BFS 遍历实际安装的 `node_modules` 构建生产依赖闭包（不依赖 lockfile 的 `dev` 标记与 `npm ls` 子进程），并关闭 `@electron/packager` 的 prune，让 ignore 白名单独占控制 `app.asar` 内容。
+
 ## [1.2.0] - 2026-08-11
 
 ### 功能
