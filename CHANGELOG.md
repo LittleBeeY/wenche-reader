@@ -32,6 +32,7 @@
 - 从第一性原理修复 AI 设置弹窗整个框闪一下：此前 `transform: translateZ(0)` 对 `display:none` 的 `<dialog>` 无效（元素未参与渲染，不会创建合成层），`showModal()` 时从 `display:none` 跳到 `display:block` 并新建合成表面，软渲染下首帧内容未光栅化上屏即闪烁。现覆盖 UA 样式让设置对话框从加载起就 `display:block + opacity:0` 常驻渲染树与合成层，配合 `inert` 阻断未打开时的交互与聚焦，`showModal()` 只改透明度复用已有表面，不再闪帧。
 - 打包忽略 `release/`，修复旧安装包被卷进新包导致体积从 172MB 膨胀到 515MB 的问题。
 - 文档明确桌面版启动方式：`WencheReader-Setup.exe` 是一次性安装器，日常从桌面/开始菜单「文澈阅读」快捷方式启动，避免用户重复运行安装器以为程序打不开。
+- 开发启动抑制 Windows 未处理异常弹窗：`desktop:dev` 注入 `ELECTRON_DEFAULT_ERROR_MODE=1`，软件渲染下的 0x80000003 断点异常不再弹框。
 
 ## [1.1.0] - 2026-08-06
 
