@@ -1,6 +1,6 @@
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,38 +37,41 @@ const TOP_LEVEL_EXCLUDES = [
 
 // 生产依赖白名单：仅打包 production dependencies 及其传递依赖，
 // 排除 devDependencies（electron、playwright、forge 等），避免 app.asar 膨胀。
-// 方案：解析 package-lock.json 的 packages 字段。lockfile v3 中每个包都有 dev: true
-// 标记，不依赖子进程，比 npm ls 更可靠（不受 cwd/stdio/环境 影响）。
+// 方案：从顶层 package.json 的 dependencies 出发，BFS 遍历实际安装的
+// node_modules 中每个包的 package.json 的 dependencies 字段构建依赖闭包。
+// 不依赖 lockfile 的 dev 标记（npm 会在同时被 prod/dev 引用的包上误标 dev: true，
+// 例如 express 的传递依赖 negotiator/iconv-lite），也不依赖 npm ls 子进程。
 function productionDeps() {
-  try {
-    const lockPath = path.join(projectRoot, "package-lock.json");
-    const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    const packages = lock.packages || {};
-    const deps = new Set();
+  const rootPkg = JSON.parse(
+    readFileSync(path.join(projectRoot, "package.json"), "utf8")
+  );
+  const nodeModulesRoot = path.join(projectRoot, "node_modules");
+  const deps = new Set();
+  const queue = Object.keys(rootPkg.dependencies || {});
 
-    for (const [pkgPath, info] of Object.entries(packages)) {
-      // 跳过根包
-      if (!pkgPath || pkgPath === "") continue;
-      // 跳过 dev-only 包（lockfile v3 的 dev 标记）
-      if (info.dev) continue;
-      // 提取包名：最后一个 "node_modules/" 之后的部分
-      const segments = pkgPath.split("node_modules/");
-      const pkgName = segments[segments.length - 1];
-      if (pkgName) deps.add(pkgName);
+  for (const name of queue) deps.add(name);
+
+  while (queue.length > 0) {
+    const name = queue.shift();
+    // 只读顶层平铺目录（npm 默认 hoist）；嵌套包由父包整个目录树保留。
+    const pkgJsonPath = path.join(nodeModulesRoot, name, "package.json");
+    let pkgJson;
+    try {
+      pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+    } catch {
+      // 顶层缺失（嵌套在别处）时跳过，不影响闭包正确性。
+      continue;
     }
-
-    console.error(`[forge] production deps (lockfile): ${deps.size}`);
-    return deps;
-  } catch (error) {
-    // lockfile 解析失败时回退到顶层 dependencies
-    console.error(`[forge] lockfile parse failed, using top-level deps fallback: ${error.message}`);
-    return new Set(
-      Object.keys(
-        JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"))
-          .dependencies || {}
-      )
-    );
+    for (const dep of Object.keys(pkgJson.dependencies || {})) {
+      if (!deps.has(dep)) {
+        deps.add(dep);
+        queue.push(dep);
+      }
+    }
   }
+
+  console.error(`[forge] production deps (BFS node_modules): ${deps.size}`);
+  return deps;
 }
 
 const PRODUCTION_DEPS = productionDeps();
@@ -77,6 +80,10 @@ export default {
   outDir: process.env.WENCHE_FORGE_OUT || "out",
   packagerConfig: {
     asar: true,
+    // packager 的 prune（galactus）会用 npm 解析器重算生产依赖闭包，可能误删
+    // mammoth 的 @xmldom/xmldom 等实际运行必需的传递依赖。关闭 prune，完全
+    // 由下方函数式 ignore 白名单精确控制 asar 内容（见 productionDeps）。
+    prune: false,
     name: "WencheReader",
     executableName: "WencheReader",
     win32metadata: {
@@ -91,6 +98,10 @@ export default {
       // 仅保留生产依赖白名单内的 node_modules 包；其余（devDependencies 及传递依赖）全部排除。
       const nodeModulesMatch = file.match(/^\/node_modules\/((?:@[^/]+\/)?[^/]+)/);
       if (nodeModulesMatch) {
+        // scoped 包的 scope 目录本身（如 /node_modules/@xmldom）不含包，必须放行，
+        // 让 packager 继续遍历到具体包目录（/node_modules/@xmldom/xmldom）再做白名单判断；
+        // 否则整个 scope 目录会被当作未知包名忽略，其下所有包（如 @xmldom/xmldom）全部丢失。
+        if (/^\/node_modules\/@[^/]+$/.test(file)) return false;
         if (!PRODUCTION_DEPS.has(nodeModulesMatch[1])) return true;
         // 排除生产包自带的测试/文档目录，进一步瘦身。
         if (/(^|\/)(test|tests|test-data|__tests__|benchmark|benchmarks)(\/|$)/.test(file)) {
