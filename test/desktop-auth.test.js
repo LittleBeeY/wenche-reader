@@ -63,10 +63,17 @@ test("rejects every route without the session token", async (t) => {
 
 test("rejects missing, empty, short, long and prefix-similar tokens", async (t) => {
   const baseUrl = await withDesktopServer(t);
+  // 前缀相似变体由"替换一位"构造，绝不等于 TOKEN：
+  // base64url 字符集内随机选一个与 TOKEN 该位不同的字符。
+  const otherChar = (c) => {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const next = alphabet[(alphabet.indexOf(c) + 1) % alphabet.length];
+    return next === c ? (c === "A" ? "B" : "A") : next;
+  };
   const variants = [
     "",
     "wrong",
-    TOKEN.slice(0, 20) + "x" + TOKEN.slice(21),
+    TOKEN.slice(0, 20) + otherChar(TOKEN[20]) + TOKEN.slice(21),
     TOKEN + "x",
     TOKEN.slice(1)
   ];
